@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -15,8 +16,11 @@ import 'package:gym/scr/domain/repository/update_profile_repository.dart';
 import 'package:gym/scr/domain/usecase/height_weight_usecase.dart';
 import 'package:gym/scr/domain/usecase/profile_usecase.dart';
 import 'package:gym/scr/domain/usecase/update_profile_usecase.dart';
+import 'package:gym/scr/presentation/controller/attendance_controller.dart';
 import 'package:gym/scr/presentation/controller/home_controller.dart';
+import 'package:gym/scr/presentation/controller/fcm_controller.dart';
 import 'package:gym/scr/presentation/controller/progress_controller.dart';
+import 'package:gym/scr/presentation/controller/workout_controller.dart';
 
 class ProfileController extends GetxController {
   ProfileController([
@@ -33,15 +37,13 @@ class ProfileController extends GetxController {
   final WeightGraphStorage? _weightGraphStorage;
   final LocalStorageService? _localStorage;
 
-  static const String _streakCountKey = 'profile_daily_streak_count';
-  static const String _streakLastVisitKey = 'profile_daily_streak_last_visit';
-
   String userName = 'Rahul Sharma';
   String userLevel = 'Intermediate Athlete';
-  String streak = '1 day';
   String phone = '+91 98765 43210';
   String email = 'rahul.sharma@email.com';
   String gender = 'Male';
+  String bloodGroup = 'O+';
+  String fitnessGoal = 'General Fitness';
   String location = 'Chennai, India';
   String height = '176 cm';
   String profileImageAsset = profileImage;
@@ -51,6 +53,7 @@ class ProfileController extends GetxController {
   bool isLoading = false;
   bool isUpdating = false;
   String? errorMessage;
+  Future<void>? _activeProfileRequest;
 
   ProfileUseCase? get _useCase {
     if (_profileUseCase != null) {
@@ -90,7 +93,7 @@ class ProfileController extends GetxController {
         : null;
   }
 
-  LocalStorageService? get _streakStorage {
+  LocalStorageService? get _storage {
     if (_localStorage != null) {
       return _localStorage;
     }
@@ -99,60 +102,40 @@ class ProfileController extends GetxController {
         : null;
   }
 
+  String get streak {
+    final attendanceController = Get.isRegistered<AttendanceController>()
+        ? Get.find<AttendanceController>()
+        : null;
+    final count = attendanceController?.currentStreak() ?? 0;
+    return '$count ${count == 1 ? 'day' : 'days'}';
+  }
+
   @override
   void onInit() {
     super.onInit();
-    _updateDailyStreak();
     if (_useCase != null) {
       getProfile();
     }
   }
 
-  Future<void> _updateDailyStreak() async {
-    final storage = _streakStorage;
-    if (storage == null) {
-      return;
+  Future<void> getProfile() {
+    final activeRequest = _activeProfileRequest;
+    if (activeRequest != null) {
+      return activeRequest;
     }
 
-    await storage.init();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final storedDate = DateTime.tryParse(
-      storage.getString(_streakLastVisitKey) ?? '',
-    );
-    final lastVisit = storedDate == null
-        ? null
-        : DateTime(storedDate.year, storedDate.month, storedDate.day);
-    var count = storage.getInt(_streakCountKey, defaultValue: 0) ?? 0;
-
-    if (lastVisit == null) {
-      count = 1;
-    } else {
-      final daysSinceLastVisit = today.difference(lastVisit).inDays;
-      if (daysSinceLastVisit == 1) {
-        count = count < 1 ? 1 : count + 1;
-      } else if (daysSinceLastVisit != 0) {
-        count = 1;
-      } else if (count < 1) {
-        count = 1;
+    final request = _loadProfile();
+    _activeProfileRequest = request;
+    return request.whenComplete(() {
+      if (identical(_activeProfileRequest, request)) {
+        _activeProfileRequest = null;
       }
-    }
-
-    await storage.saveInt(_streakCountKey, count);
-    await storage.saveString(
-      _streakLastVisitKey,
-      '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}',
-    );
-    if (isClosed) {
-      return;
-    }
-    streak = '$count ${count == 1 ? 'day' : 'days'}';
-    update();
+    });
   }
 
-  Future<void> getProfile() async {
+  Future<void> _loadProfile() async {
     final useCase = _useCase;
-    if (useCase == null || isLoading) {
+    if (useCase == null) {
       return;
     }
 
@@ -163,6 +146,8 @@ class ProfileController extends GetxController {
     phone = '';
     email = '';
     gender = '';
+    bloodGroup = '';
+    fitnessGoal = '';
     location = '';
     height = '';
     weight = '';
@@ -195,14 +180,22 @@ class ProfileController extends GetxController {
 
   void _applyProfile(ProfileUser user) {
     userName = _valueOrFallback(user.name, userName);
-    userLevel = _valueOrFallback(user.fitnessGoal, userLevel);
+    fitnessGoal = _valueOrFallback(user.fitnessGoal, fitnessGoal);
+    userLevel = fitnessGoal;
     phone = _valueOrFallback(user.phone, phone);
     email = _valueOrFallback(user.email, email);
     gender = _valueOrFallback(user.gender, gender);
+    bloodGroup = _valueOrFallback(user.bloodGroup, bloodGroup);
     location = _valueOrFallback(user.address, location);
     height = _metricOrFallback(user.height, 'cm', height);
     weight = _metricOrFallback(user.weight, 'kg', weight);
     profileImageUrl = _imageUrl(user.profileImage) ?? profileImageUrl;
+    final accountPhone = user.phone?.trim();
+    if (accountPhone != null &&
+        accountPhone.isNotEmpty &&
+        Get.isRegistered<FcmController>()) {
+      unawaited(Get.find<FcmController>().syncToken(phoneNumber: accountPhone));
+    }
   }
 
   String _valueOrFallback(String? value, String fallback) {
@@ -228,24 +221,6 @@ class ProfileController extends GetxController {
     return Uri.parse(ApiRoutes.baseUrl).resolve(normalized).toString();
   }
 
-  final List<ProfileQuickAction> quickActions = const [
-    ProfileQuickAction(
-      icon: Icons.workspace_premium_rounded,
-      label: 'Plan',
-      route: AppRoutes.choosePlan,
-    ),
-    ProfileQuickAction(
-      icon: Icons.restaurant_menu_rounded,
-      label: 'Diet',
-      route: AppRoutes.dietPlan,
-    ),
-    ProfileQuickAction(
-      icon: Icons.logout_rounded,
-      label: 'Logout',
-      route: 'logout',
-    ),
-  ];
-
   List<ProfileItem> get physicalDetails => [
     ProfileItem(
       icon: Icons.height_rounded,
@@ -269,16 +244,22 @@ class ProfileController extends GetxController {
       route: AppRoutes.personalInformation,
     ),
     ProfileItem(
-      icon: Icons.receipt_long_rounded,
-      title: 'Transaction History',
-      value: 'Membership payments',
-      route: AppRoutes.transactionHistory,
-    ),
-    ProfileItem(
       icon: Icons.privacy_tip_rounded,
       title: 'Privacy Policy',
       value: 'Data and app policy',
       route: AppRoutes.privacyPolicy,
+    ),
+    ProfileItem(
+      icon: Icons.gavel_rounded,
+      title: 'Terms & Conditions',
+      value: 'Rules for using the app',
+      route: AppRoutes.termsAndConditions,
+    ),
+    ProfileItem(
+      icon: Icons.logout_rounded,
+      title: 'Logout',
+      value: 'Sign out of your account',
+      route: 'logout',
     ),
   ];
 
@@ -291,7 +272,10 @@ class ProfileController extends GetxController {
 
   Future<bool> updatePersonalInformation({
     required String userName,
+    required String email,
     required String gender,
+    required String bloodGroup,
+    required String fitnessGoal,
     required String location,
     Uint8List? imageBytes,
     String? imageName,
@@ -299,7 +283,11 @@ class ProfileController extends GetxController {
     final useCase = _updateUseCase;
     if (useCase == null) {
       this.userName = userName;
+      this.email = email;
       this.gender = gender;
+      this.bloodGroup = bloodGroup;
+      this.fitnessGoal = fitnessGoal;
+      userLevel = fitnessGoal;
       this.location = location;
       profileImageBytes = imageBytes ?? profileImageBytes;
       _syncHomeName(userName);
@@ -318,7 +306,10 @@ class ProfileController extends GetxController {
       final response = await useCase(
         UpdateProfileParams(
           name: userName,
+          email: email,
           gender: gender,
+          bloodGroup: bloodGroup,
+          fitnessGoal: fitnessGoal,
           address: location,
           profileImageBytes: imageBytes,
           profileImageName: imageName,
@@ -340,11 +331,19 @@ class ProfileController extends GetxController {
         this.userName = userName;
       } else {
         this.userName = userName;
+        this.email = email;
         this.gender = gender;
+        this.bloodGroup = bloodGroup;
+        this.fitnessGoal = fitnessGoal;
+        userLevel = fitnessGoal;
         this.location = location;
       }
       profileImageBytes = imageBytes ?? profileImageBytes;
       _syncHomeName(this.userName);
+      if (_useCase != null) {
+        await getProfile();
+        _syncHomeName(this.userName);
+      }
       return true;
     } on DioException catch (error) {
       final responseData = error.response?.data;
@@ -363,10 +362,12 @@ class ProfileController extends GetxController {
 
   void _applyUpdatedProfile(UpdatedProfileUser user) {
     userName = _valueOrFallback(user.name, userName);
-    userLevel = _valueOrFallback(user.fitnessGoal, userLevel);
+    fitnessGoal = _valueOrFallback(user.fitnessGoal, fitnessGoal);
+    userLevel = fitnessGoal;
     phone = _valueOrFallback(user.phone, phone);
     email = _valueOrFallback(user.email, email);
     gender = _valueOrFallback(user.gender, gender);
+    bloodGroup = _valueOrFallback(user.bloodGroup, bloodGroup);
     location = _valueOrFallback(user.address, location);
     height = _metricOrFallback(user.height, 'cm', height);
     weight = _metricOrFallback(user.weight, 'kg', weight);
@@ -410,7 +411,10 @@ class ProfileController extends GetxController {
             TextButton(
               onPressed: () async {
                 Get.back();
-                final storage = _streakStorage ?? LocalStorageService();
+                final storage = _storage ?? LocalStorageService();
+                if (Get.isRegistered<WorkoutController>()) {
+                  Get.find<WorkoutController>().resetSessionState();
+                }
                 await storage.remove('auth_token');
                 Get.offAllNamed(AppRoutes.login);
               },
@@ -529,7 +533,10 @@ class ProfileController extends GetxController {
     height = '${_compactMetric(newHeight)} cm';
     weight = '${_compactMetric(newWeight)} kg';
     if (Get.isRegistered<HomeController>()) {
-      Get.find<HomeController>().applyWeight(newWeight);
+      Get.find<HomeController>().applyMeasurements(
+        height: newHeight,
+        weight: newWeight,
+      );
     }
     if (Get.isRegistered<ProgressController>()) {
       await Get.find<ProgressController>().recordWeight(newWeight);
@@ -689,18 +696,6 @@ class _HeightWeightDialogState extends State<_HeightWeightDialog> {
       widget.errorMessage() ?? 'Unable to save height and weight.',
     );
   }
-}
-
-class ProfileQuickAction {
-  const ProfileQuickAction({
-    required this.icon,
-    required this.label,
-    required this.route,
-  });
-
-  final IconData icon;
-  final String label;
-  final String route;
 }
 
 class ProfileItem {

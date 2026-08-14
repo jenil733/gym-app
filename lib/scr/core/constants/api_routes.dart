@@ -12,11 +12,14 @@ class ApiRoutes {
   static const String diet = '/diet_plans';
   static String dietByPlan(int planId) => '/diet_plans/$planId/meals';
   static String dietMeal(int mealId) => '/diet_meals/$mealId';
-  static const String packages = '/packages';
   static const String workoutHistory = '/workout_history';
-  static const String setWater = '/set_water_goal';
   static const String height = '/log_height_weight';
   static const String weight = '/weight_history';
   static const String timing = '/log_workout';
   static const String gettiming = '/workout_history';
+  static const String footstepHistory = '/footstep_history';
+  static const String postFootstep = '/log_footstep';
+  static const String postAttendance = '/mark_attendance';
+  static const String attendanceHistory = '/attendance_history';
+  static const String fcm = '/fcm_token';
 }

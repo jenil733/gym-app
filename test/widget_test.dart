@@ -31,9 +31,7 @@ import 'package:gym/scr/presentation/controller/profile_controller.dart';
 import 'package:gym/scr/presentation/controller/sign_up_controller.dart';
 import 'package:gym/scr/presentation/controller/home_controller.dart';
 import 'package:gym/scr/presentation/controller/diet_plan_controller.dart';
-import 'package:gym/scr/presentation/controller/transaction_controller.dart';
 import 'package:gym/scr/presentation/controller/workout_controller.dart';
-import 'package:gym/scr/presentation/view/plan/choose_plan.dart';
 import 'package:gym/scr/presentation/widgets/main/main_navigation.dart';
 
 void main() {
@@ -110,13 +108,19 @@ void main() {
     );
     expect(find.text('Create your account'), findsOneWidget);
     expect(find.byKey(const ValueKey('signup-subtitle')), findsOneWidget);
+    expect(find.text('Location'), findsOneWidget);
+    expect(find.text('Fitness Goal'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('signup-fitness-goal-dropdown')),
+      findsOneWidget,
+    );
     expect(find.text('Name'), findsOneWidget);
     expect(find.text('Phone'), findsOneWidget);
     expect(find.text('DOB'), findsOneWidget);
     expect(find.text('Full name'), findsOneWidget);
     expect(find.text('Phone number'), findsOneWidget);
     expect(find.text('Gender'), findsNWidgets(2));
-    expect(find.text('Place'), findsNWidgets(2));
+    expect(find.text('City or address'), findsOneWidget);
     expect(find.text('YYYY-MM-DD', skipOffstage: false), findsOneWidget);
     expect(find.text('Continue', skipOffstage: false), findsOneWidget);
     expect(find.text('Already have an account?'), findsOneWidget);
@@ -162,7 +166,14 @@ void main() {
       find.text('Gender is required', skipOffstage: false),
       findsOneWidget,
     );
-    expect(find.text('Place is required', skipOffstage: false), findsOneWidget);
+    expect(
+      find.text('Location is required', skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Fitness goal is required', skipOffstage: false),
+      findsOneWidget,
+    );
   });
 
   testWidgets('OTP screen shows four digit inputs and validates code', (
@@ -206,14 +217,24 @@ void main() {
     expect(find.text('Hello, Rahul'), findsOneWidget);
     expect(find.text("Let's smash your goals today!"), findsOneWidget);
     expect(find.text("Today's Workout"), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-today-workout-total')),
+      findsNothing,
+    );
     expect(find.text('No exercises added'), findsOneWidget);
     expect(find.text('Browse Exercises'), findsOneWidget);
     expect(find.text('Today Plan'), findsNothing);
     expect(find.byKey(const ValueKey('home-workout-image')), findsOneWidget);
     expect(find.text('Calories'), findsNothing);
     expect(find.text('Workout Time'), findsOneWidget);
+    expect(find.text('0 min', findRichText: true), findsOneWidget);
     expect(find.text('Water'), findsNothing);
     expect(find.text('Steps'), findsOneWidget);
+    expect(find.text('Today'), findsNothing);
+    expect(find.text("today's activity"), findsOneWidget);
+    expect(find.text('Nutrition'), findsOneWidget);
+    expect(find.text('Diet Plan'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-diet-card')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('home-card-artwork-workout-time')),
       findsOneWidget,
@@ -361,6 +382,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add to Workout'), findsOneWidget);
+    expect(find.byKey(const ValueKey('exercise-video-play')), findsOneWidget);
 
     await tester.tap(find.text('Add to Workout'));
     await tester.pump();
@@ -454,7 +476,7 @@ void main() {
     expect(controller.hasCompletedWorkout, isTrue);
   });
 
-  testWidgets('Home stat cards open history screens', (
+  testWidgets('Home does not expose placeholder workout history', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -464,13 +486,9 @@ void main() {
     await tester.tap(find.text('Workout Time'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Workout Time History'), findsOneWidget);
-    expect(find.text('Chest workout completed'), findsOneWidget);
-    expect(find.text('45 min'), findsWidgets);
-
-    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
-    await tester.pumpAndSettle();
-
+    expect(find.text('Workout Time History'), findsNothing);
+    expect(find.text('Chest workout completed'), findsNothing);
+    expect(find.text('45 min'), findsNothing);
     expect(find.text('Water'), findsNothing);
     expect(find.text('Water History'), findsNothing);
   });
@@ -515,7 +533,7 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Workouts'), findsOneWidget);
     expect(find.text('Attendance'), findsOneWidget);
-    expect(find.text('Progress'), findsOneWidget);
+    expect(find.text('Progress'), findsNothing);
     expect(find.text('Profile'), findsOneWidget);
 
     await tester.tap(find.text('Workouts'));
@@ -585,7 +603,12 @@ void main() {
     await tester.pumpWidget(const GetMaterialApp(home: ProgressScreen()));
 
     expect(find.text('Current Weight'), findsOneWidget);
-    expect(find.text('Weight Graph'), findsOneWidget);
+    expect(find.text('Weight Graph'), findsNothing);
+    expect(find.text("Log Today's Weight"), findsNothing);
+    expect(find.text('Days'), findsNothing);
+    expect(find.text('Weeks'), findsNothing);
+    expect(find.text('Months'), findsNothing);
+    expect(find.text('Annual'), findsNothing);
     expect(find.text('Water Level'), findsNothing);
     expect(find.byKey(const ValueKey('water-level-input')), findsNothing);
   });
@@ -599,10 +622,11 @@ void main() {
 
     expect(find.text('Physical Detail'), findsOneWidget);
     expect(find.text('Streak'), findsOneWidget);
-    expect(find.text('1 day'), findsOneWidget);
+    expect(find.text('0 days'), findsOneWidget);
     expect(find.text('Tokens'), findsNothing);
-    expect(find.text('Plan'), findsOneWidget);
-    expect(find.text('Diet'), findsOneWidget);
+    expect(find.text('Plan'), findsNothing);
+    expect(find.text('Transaction History'), findsNothing);
+    expect(find.text('Diet'), findsNothing);
     expect(find.text('Rewards'), findsNothing);
     expect(find.text('Fitness Goal'), findsNothing);
     expect(find.text('176 cm'), findsOneWidget);
@@ -628,19 +652,6 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
-      find.text('Transaction History'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('Transaction History'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('No transactions yet'), findsOneWidget);
-
-    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
-    await tester.pumpAndSettle();
-
-    await tester.scrollUntilVisible(
       find.text('Privacy Policy'),
       300,
       scrollable: find.byType(Scrollable).first,
@@ -650,37 +661,19 @@ void main() {
 
     expect(find.text('Your Data'), findsOneWidget);
     expect(find.text('Notifications'), findsOneWidget);
-  });
 
-  testWidgets('Pay Now records a transaction visible from Profile', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      GetMaterialApp(
-        getPages: AppRoutes.routes,
-        home: const ChoosePlanScreen(),
-      ),
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Terms & Conditions'),
+      300,
+      scrollable: find.byType(Scrollable).first,
     );
-
-    await tester.ensureVisible(find.text('Pay Now'));
-    await tester.tap(find.text('Pay Now'));
-    await tester.pump();
-
-    final transactions = Get.find<TransactionController>().transactions;
-    expect(transactions, hasLength(1));
-    expect(transactions.first.plan, 'Monthly');
-    expect(transactions.first.amount, 'INR 799');
-    expect(transactions.first.paymentMethod, 'Card');
-
-    await tester.pump(const Duration(seconds: 4));
+    await tester.tap(find.text('Terms & Conditions'));
     await tester.pumpAndSettle();
 
-    Get.toNamed<void>(AppRoutes.transactionHistory);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Monthly Membership'), findsOneWidget);
-    expect(find.text('INR 799'), findsOneWidget);
-    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Using the App'), findsOneWidget);
+    expect(find.text('Health & Safety'), findsOneWidget);
   });
 
   testWidgets('Personal information edits details and offers gallery image', (
@@ -700,21 +693,37 @@ void main() {
     expect(find.text('Weight (kg)'), findsNothing);
     expect(find.text('Age'), findsNothing);
     expect(find.text('DOB'), findsNothing);
-    expect(find.text('Email'), findsNothing);
-    expect(find.byKey(const ValueKey('profile-email-input')), findsNothing);
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.byKey(const ValueKey('profile-email-input')), findsOneWidget);
+    expect(find.text('Blood Group'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('profile-change-photo-button')),
+      find.byKey(const ValueKey('profile-blood-group-input')),
       findsOneWidget,
     );
+    expect(find.text('Fitness Goal'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('profile-fitness-goal-input')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('profile-photo-upload-button')),
+      findsOneWidget,
+    );
+    expect(find.text('Change Photo'), findsNothing);
+    expect(find.byIcon(Icons.edit_rounded), findsNothing);
 
     await tester.enterText(
       find.byKey(const ValueKey('profile-name-input')),
       'Meena Raj',
     );
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('profile-save-button')),
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, -600),
     );
+    await tester.pumpAndSettle();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('profile-save-button')));
     for (var attempt = 0; attempt < 20; attempt += 1) {
@@ -779,6 +788,7 @@ class _FakeExerciseRepository implements ExerciseRepository {
           ExerciseItem(
             id: 10,
             exerciseName: 'Barbell Bench Press',
+            videoUrl: 'https://youtu.be/-hSma-BRzoo',
             sets: 4,
             reps: 10,
             restSeconds: 60,

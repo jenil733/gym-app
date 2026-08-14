@@ -1,9 +1,12 @@
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:gym/scr/core/services/weight_graph_storage.dart';
+import 'package:gym/scr/core/services/weight_goal_storage.dart';
+import 'package:gym/scr/core/utils/helper/toast_helper.dart';
 import 'package:gym/scr/data/model/getweight_model.dart';
 import 'package:gym/scr/data/model/heightweight_model.dart';
 import 'package:gym/scr/domain/usecase/height_weight_usecase.dart';
+import 'package:gym/scr/domain/usecase/profile_usecase.dart';
 import 'package:gym/scr/domain/usecase/weight_history_usecase.dart';
 
 enum WeightGraphRange { days, weeks, months, annually }
@@ -13,11 +16,15 @@ class ProgressController extends GetxController {
     this._heightWeightUseCase,
     this._weightHistoryUseCase,
     this._graphStorage,
+    this._goalStorage,
+    this._profileUseCase,
   ]);
 
   final HeightWeightUseCase? _heightWeightUseCase;
   final WeightHistoryUseCase? _weightHistoryUseCase;
   final WeightGraphStorage? _graphStorage;
+  final WeightGoalStorage? _goalStorage;
+  final ProfileUseCase? _profileUseCase;
 
   static ProgressController resolve() {
     if (Get.isRegistered<ProgressController>()) {
@@ -34,6 +41,10 @@ class ProgressController extends GetxController {
         Get.isRegistered<WeightGraphStorage>()
             ? Get.find<WeightGraphStorage>()
             : null,
+        Get.isRegistered<WeightGoalStorage>()
+            ? Get.find<WeightGoalStorage>()
+            : null,
+        Get.isRegistered<ProfileUseCase>() ? Get.find<ProfileUseCase>() : null,
       ),
     );
   }
@@ -45,11 +56,32 @@ class ProgressController extends GetxController {
   final Rxn<HeightWeightData> latestHeightWeight = Rxn<HeightWeightData>();
   final RxDouble currentWeight = 0.0.obs;
   final RxDouble currentChange = 0.0.obs;
-  final Rx<WeightGraphRange> selectedGraphRange = WeightGraphRange.days.obs;
+  final RxDouble currentHeight = 0.0.obs;
+  final Rxn<WeightGoal> activeGoal = Rxn<WeightGoal>();
+  final Rx<WeightGraphRange> selectedGraphRange = WeightGraphRange.weeks.obs;
   final RxList<WeightGraphPoint> graphPoints = <WeightGraphPoint>[].obs;
   final RxList<ProgressHistoryItem> history = <ProgressHistoryItem>[].obs;
 
   List<WeightSample> _samples = const [];
+
+  double get goalProgress =>
+      activeGoal.value?.progressFor(currentWeight.value) ?? 0;
+
+  double get goalRemaining {
+    final goal = activeGoal.value;
+    if (goal == null || currentWeight.value <= 0) {
+      return 0;
+    }
+    return (goal.targetWeight - currentWeight.value).abs();
+  }
+
+  bool get isGoalCompleted =>
+      activeGoal.value?.isCompletedAt(currentWeight.value) ?? false;
+
+  bool get canChangeGoal {
+    final goal = activeGoal.value;
+    return goal == null || !DateTime.now().isBefore(goal.lockedUntil);
+  }
 
   List<double> get weightPoints =>
       graphPoints.map((point) => point.weight).toList(growable: false);
@@ -68,6 +100,12 @@ class ProgressController extends GetxController {
   }
 
   Future<void> loadWeightProgress() async {
+    final goalStorage = _goalStorage;
+    if (goalStorage != null) {
+      activeGoal.value = await goalStorage.load();
+    }
+    await _loadProfileMetrics();
+
     final storage = _graphStorage;
     if (storage != null) {
       _setSamples(await storage.load());
@@ -108,6 +146,119 @@ class ProgressController extends GetxController {
     } finally {
       isWeightHistoryLoading.value = false;
     }
+  }
+
+  Future<void> _loadProfileMetrics() async {
+    final useCase = _profileUseCase;
+    if (useCase == null) {
+      return;
+    }
+    try {
+      final response = await useCase();
+      final user = response.data?.user;
+      final height = _parseMetric(user?.height);
+      final weight = _parseMetric(user?.weight);
+      if (height != null && height > 0) {
+        currentHeight.value = height;
+      }
+      if (currentWeight.value <= 0 && weight != null && weight > 0) {
+        currentWeight.value = weight;
+      }
+    } catch (_) {
+      // Weight history remains available if profile metrics cannot be loaded.
+    }
+  }
+
+  Future<bool> setSixMonthGoal(double targetWeight) async {
+    if (targetWeight <= 0) {
+      heightWeightError.value = 'Enter a valid target weight.';
+      return false;
+    }
+    if (!canChangeGoal) {
+      heightWeightError.value =
+          'Your goal is locked until $goalUnlockDateLabel.';
+      ToastHelper.info('Goal is locked', heightWeightError.value!);
+      return false;
+    }
+    final startingWeight = currentWeight.value;
+    if (startingWeight <= 0) {
+      heightWeightError.value =
+          'Log your current weight before setting a target.';
+      return false;
+    }
+    if ((startingWeight - targetWeight).abs() < 0.05) {
+      heightWeightError.value =
+          'Target weight must be different from your current weight.';
+      return false;
+    }
+
+    final goal = WeightGoal.create(
+      startWeight: startingWeight,
+      targetWeight: targetWeight,
+    );
+    activeGoal.value = goal;
+    await _goalStorage?.save(goal);
+    heightWeightError.value = null;
+    ToastHelper.success(
+      'Six-month goal set',
+      'Your target is locked until $goalUnlockDateLabel.',
+    );
+    return true;
+  }
+
+  Future<void> startNewGoal() async {
+    if (!canChangeGoal) {
+      ToastHelper.info(
+        'Goal is locked',
+        'You can set a new target after $goalUnlockDateLabel.',
+      );
+      return;
+    }
+    activeGoal.value = null;
+    await _goalStorage?.clear();
+  }
+
+  Future<bool> logWeeklyWeight(double weight) async {
+    if (weight <= 0) {
+      heightWeightError.value = 'Enter a valid weight.';
+      return false;
+    }
+    if (currentHeight.value <= 0) {
+      await _loadProfileMetrics();
+    }
+    if (currentHeight.value <= 0) {
+      heightWeightError.value =
+          'Add your height in Personal Information before logging weight.';
+      return false;
+    }
+    final wasCompleted = isGoalCompleted;
+    final saved = await postHeightWeight(
+      height: currentHeight.value,
+      weight: weight,
+    );
+    if (saved && !wasCompleted && isGoalCompleted) {
+      ToastHelper.success(
+        'Congratulations!',
+        'You completed your six-month weight goal.',
+      );
+    } else if (saved) {
+      ToastHelper.success(
+        'Weight updated',
+        'Your weekly weight has been added to the trend.',
+      );
+    }
+    return saved;
+  }
+
+  Future<bool> logDailyWeight(double weight) => logWeeklyWeight(weight);
+
+  String get goalUnlockDateLabel {
+    final date = activeGoal.value?.lockedUntil;
+    if (date == null) {
+      return '';
+    }
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   void selectGraphRange(WeightGraphRange range) {
@@ -326,6 +477,12 @@ class ProgressController extends GetxController {
   double? _parseWeight(String? value) {
     return double.tryParse(
       (value ?? '').replaceAll(RegExp('kg', caseSensitive: false), '').trim(),
+    );
+  }
+
+  double? _parseMetric(String? value) {
+    return double.tryParse(
+      (value ?? '').replaceAll(RegExp(r'[^0-9.]'), '').trim(),
     );
   }
 

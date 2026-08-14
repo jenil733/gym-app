@@ -28,11 +28,13 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Select a profile photo from your gallery.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan the gym QR code to mark your attendance.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>This application uses motion data to calculate your daily steps.</string>
 	<key>UIBackgroundModes</key>
 	<array>
-		<string>processing</string>
+		<string>remote-notification</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

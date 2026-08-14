@@ -1,17 +1,22 @@
 import 'package:get/get.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:gym/scr/core/services/api_services.dart';
 import 'package:gym/scr/core/services/local_storage.dart';
+import 'package:gym/scr/core/services/pending_registration_profile.dart';
 import 'package:gym/scr/core/services/step_tracking_service.dart';
 import 'package:gym/scr/core/services/weight_graph_storage.dart';
+import 'package:gym/scr/core/services/weight_goal_storage.dart';
+import 'package:gym/scr/data/repository/attendance_repository_impl.dart';
 import 'package:gym/scr/data/repository/category_repository_impl.dart';
 import 'package:gym/scr/data/repository/diet_repository_impl.dart';
 import 'package:gym/scr/data/repository/diet_by_plan_repository_impl.dart';
 import 'package:gym/scr/data/repository/diet_meal_repository_impl.dart';
 import 'package:gym/scr/data/repository/exercise_repository_impl.dart';
+import 'package:gym/scr/data/repository/fcm_repository_impl.dart';
+import 'package:gym/scr/data/repository/footstep_repository_impl.dart';
 import 'package:gym/scr/data/repository/height_weight_repository_impl.dart';
 import 'package:gym/scr/data/repository/login_repository_impl.dart';
 import 'package:gym/scr/data/repository/otp_repository_impl.dart';
-import 'package:gym/scr/data/repository/packages_repository_impl.dart';
 import 'package:gym/scr/data/repository/profile_repository_impl.dart';
 import 'package:gym/scr/data/repository/signup_repository_impl.dart';
 import 'package:gym/scr/data/repository/update_profile_repository_impl.dart';
@@ -19,14 +24,16 @@ import 'package:gym/scr/data/repository/weight_history_repository_impl.dart';
 import 'package:gym/scr/data/repository/workout_history_repository_impl.dart';
 import 'package:gym/scr/data/repository/workout_timing_repository_impl.dart';
 import 'package:gym/scr/domain/repository/category_repository.dart';
+import 'package:gym/scr/domain/repository/attendance_repository.dart';
 import 'package:gym/scr/domain/repository/diet_repository.dart';
 import 'package:gym/scr/domain/repository/diet_by_plan_repository.dart';
 import 'package:gym/scr/domain/repository/diet_meal_repository.dart';
 import 'package:gym/scr/domain/repository/exercise_repository.dart';
+import 'package:gym/scr/domain/repository/fcm_repository.dart';
+import 'package:gym/scr/domain/repository/footstep_repository.dart';
 import 'package:gym/scr/domain/repository/height_weight_repository.dart';
 import 'package:gym/scr/domain/repository/login_repository.dart';
 import 'package:gym/scr/domain/repository/otp_repository.dart';
-import 'package:gym/scr/domain/repository/packages_repository.dart';
 import 'package:gym/scr/domain/repository/profile_repository.dart';
 import 'package:gym/scr/domain/repository/signup_repository.dart';
 import 'package:gym/scr/domain/repository/update_profile_repository.dart';
@@ -34,13 +41,15 @@ import 'package:gym/scr/domain/repository/weight_history_repository.dart';
 import 'package:gym/scr/domain/repository/workout_history_repository.dart';
 import 'package:gym/scr/domain/repository/workout_timing_repository.dart';
 import 'package:gym/scr/domain/usecase/category_usecase.dart';
+import 'package:gym/scr/domain/usecase/attendance_usecase.dart';
 import 'package:gym/scr/domain/usecase/diet_usecase.dart';
 import 'package:gym/scr/domain/usecase/diet_by_plan_usecase.dart';
 import 'package:gym/scr/domain/usecase/diet_meal_usecase.dart';
 import 'package:gym/scr/domain/usecase/exercise_usecase.dart';
+import 'package:gym/scr/domain/usecase/fcm_usecase.dart';
+import 'package:gym/scr/domain/usecase/footstep_usecase.dart';
 import 'package:gym/scr/domain/usecase/height_weight_usecase.dart';
 import 'package:gym/scr/domain/usecase/login_usecase.dart';
-import 'package:gym/scr/domain/usecase/packages_usecase.dart';
 import 'package:gym/scr/domain/usecase/profile_usecase.dart';
 import 'package:gym/scr/domain/usecase/signup_usecase.dart';
 import 'package:gym/scr/domain/usecase/update_profile_usecase.dart';
@@ -49,10 +58,11 @@ import 'package:gym/scr/domain/usecase/weight_history_usecase.dart';
 import 'package:gym/scr/domain/usecase/workout_history_usecase.dart';
 import 'package:gym/scr/domain/usecase/workout_timing_usecase.dart';
 import 'package:gym/scr/presentation/controller/login_controller.dart';
+import 'package:gym/scr/presentation/controller/attendance_controller.dart';
 import 'package:gym/scr/presentation/controller/diet_plan_controller.dart';
+import 'package:gym/scr/presentation/controller/fcm_controller.dart';
 import 'package:gym/scr/presentation/controller/home_controller.dart';
 import 'package:gym/scr/presentation/controller/otp_controller.dart';
-import 'package:gym/scr/presentation/controller/plan_controller.dart';
 import 'package:gym/scr/presentation/controller/profile_controller.dart';
 import 'package:gym/scr/presentation/controller/progress_controller.dart';
 import 'package:gym/scr/presentation/controller/sign_up_controller.dart';
@@ -62,12 +72,46 @@ class ServiceLocator {
   static void init() {
     Get.lazyPut<ApiService>(ApiService.new, fenix: true);
     Get.lazyPut<LocalStorageService>(LocalStorageService.new, fenix: true);
+    if (Firebase.apps.isNotEmpty) {
+      Get.lazyPut<FcmRepository>(
+        () => FcmRepositoryImpl(Get.find<ApiService>()),
+        fenix: true,
+      );
+      Get.lazyPut<FcmUseCase>(
+        () => FcmUseCase(Get.find<FcmRepository>()),
+        fenix: true,
+      );
+      Get.put<FcmController>(
+        FcmController(Get.find<FcmUseCase>(), Get.find<LocalStorageService>()),
+        permanent: true,
+      );
+    }
+    Get.lazyPut<PendingRegistrationProfile>(
+      () => PendingRegistrationProfile(Get.find<LocalStorageService>()),
+      fenix: true,
+    );
     Get.lazyPut<StepTrackingService>(
       () => StepTrackingService(Get.find<LocalStorageService>()),
       fenix: true,
     );
     Get.lazyPut<WeightGraphStorage>(
       () => WeightGraphStorage(Get.find<LocalStorageService>()),
+      fenix: true,
+    );
+    Get.lazyPut<WeightGoalStorage>(
+      () => WeightGoalStorage(Get.find<LocalStorageService>()),
+      fenix: true,
+    );
+    Get.lazyPut<AttendanceRepository>(
+      () => AttendanceRepositoryImpl(Get.find<ApiService>()),
+      fenix: true,
+    );
+    Get.lazyPut<AttendanceUseCase>(
+      () => AttendanceUseCase(Get.find<AttendanceRepository>()),
+      fenix: true,
+    );
+    Get.lazyPut<AttendanceController>(
+      () => AttendanceController(Get.find<AttendanceUseCase>()),
       fenix: true,
     );
     Get.lazyPut<DietRepository>(
@@ -155,7 +199,10 @@ class ServiceLocator {
       fenix: true,
     );
     Get.lazyPut<SignUpController>(
-      () => SignUpController(Get.find<SignupUseCase>()),
+      () => SignUpController(
+        Get.find<SignupUseCase>(),
+        Get.find<PendingRegistrationProfile>(),
+      ),
       fenix: true,
     );
     Get.lazyPut<OtpRepository>(
@@ -170,6 +217,8 @@ class ServiceLocator {
       () => OtpController(
         Get.find<VerifyOtpUseCase>(),
         Get.find<LocalStorageService>(),
+        Get.find<PendingRegistrationProfile>(),
+        Get.find<UpdateProfileUseCase>(),
       ),
       fenix: true,
     );
@@ -199,18 +248,6 @@ class ServiceLocator {
       ),
       fenix: true,
     );
-    Get.lazyPut<PackagesRepository>(
-      () => PackagesRepositoryImpl(Get.find<ApiService>()),
-      fenix: true,
-    );
-    Get.lazyPut<PackagesUseCase>(
-      () => PackagesUseCase(Get.find<PackagesRepository>()),
-      fenix: true,
-    );
-    Get.lazyPut<PlanController>(
-      () => PlanController(Get.find<PackagesUseCase>()),
-      fenix: true,
-    );
     Get.lazyPut<WorkoutHistoryRepository>(
       () => WorkoutHistoryRepositoryImpl(Get.find<ApiService>()),
       fenix: true,
@@ -227,6 +264,14 @@ class ServiceLocator {
       () => WeightHistoryUseCase(Get.find<WeightHistoryRepository>()),
       fenix: true,
     );
+    Get.lazyPut<FootstepRepository>(
+      () => FootstepRepositoryImpl(Get.find<ApiService>()),
+      fenix: true,
+    );
+    Get.lazyPut<FootstepUseCase>(
+      () => FootstepUseCase(Get.find<FootstepRepository>()),
+      fenix: true,
+    );
     Get.lazyPut<HomeController>(
       () => HomeController(
         Get.find<WorkoutHistoryUseCase>(),
@@ -234,6 +279,7 @@ class ServiceLocator {
         Get.find<StepTrackingService>(),
         Get.find<ProfileUseCase>(),
         Get.find<WorkoutTimingUseCase>(),
+        Get.find<FootstepUseCase>(),
       ),
       fenix: true,
     );
@@ -250,6 +296,8 @@ class ServiceLocator {
         Get.find<HeightWeightUseCase>(),
         Get.find<WeightHistoryUseCase>(),
         Get.find<WeightGraphStorage>(),
+        Get.find<WeightGoalStorage>(),
+        Get.find<ProfileUseCase>(),
       ),
       fenix: true,
     );

@@ -65,17 +65,39 @@ class WorkoutTimingHistoryData {
 }
 
 class WorkoutTimingHistoryItem {
-  const WorkoutTimingHistoryItem({this.day, this.durationMinutes, this.notes});
+  const WorkoutTimingHistoryItem({
+    this.day,
+    this.date,
+    this.exerciseId,
+    this.exerciseName,
+    this.categoryId,
+    this.categoryName,
+    this.durationMinutes,
+    this.notes,
+    this.status,
+  });
 
   factory WorkoutTimingHistoryItem.fromJson(Map<String, dynamic> json) {
     return WorkoutTimingHistoryItem(
       day: json['day']?.toString(),
+      date: json['date']?.toString() ?? json['workout_date']?.toString(),
+      exerciseId: int.tryParse(json['exercise_id']?.toString() ?? ''),
+      exerciseName: json['exercise_name']?.toString(),
+      categoryId: int.tryParse(json['category_id']?.toString() ?? ''),
+      categoryName: json['category_name']?.toString(),
       durationMinutes: int.tryParse(json['duration_minutes']?.toString() ?? ''),
       notes: json['notes']?.toString(),
+      status: json['status']?.toString(),
     );
   }
 
   final String? day;
+  final String? date;
+  final int? exerciseId;
+  final String? exerciseName;
+  final int? categoryId;
+  final String? categoryName;
   final int? durationMinutes;
   final String? notes;
+  final String? status;
 }

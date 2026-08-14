@@ -10,10 +10,9 @@ import 'package:gym/scr/presentation/view/home/body_history.dart';
 import 'package:gym/scr/presentation/view/home/stat_history.dart';
 import 'package:gym/scr/presentation/view/notifications/notifications.dart';
 import 'package:gym/scr/presentation/view/onboarding/onboarding.dart';
-import 'package:gym/scr/presentation/view/plan/choose_plan.dart';
 import 'package:gym/scr/presentation/view/profile/personal_information.dart';
 import 'package:gym/scr/presentation/view/profile/privacy_policy.dart';
-import 'package:gym/scr/presentation/view/profile/transaction_history.dart';
+import 'package:gym/scr/presentation/view/profile/terms_and_conditions.dart';
 import 'package:gym/scr/presentation/view/splash_screen/splash.dart';
 import 'package:gym/scr/presentation/view/workout/exercise_detail.dart';
 import 'package:gym/scr/presentation/view/workout/my_workout.dart';
@@ -28,7 +27,6 @@ class AppRoutes {
   static const String otp = '/otp';
   static const String main = '/main';
   static const String timer = '/timer';
-  static const String choosePlan = '/choose-plan';
   static const String notifications = '/notifications';
   static const String trainer = '/trainer';
   static const String exerciseDetail = '/exercise-detail';
@@ -38,8 +36,8 @@ class AppRoutes {
   static const String dietPlan = '/diet-plan';
   static const String mealDetail = '/meal-detail';
   static const String personalInformation = '/personal-information';
-  static const String transactionHistory = '/transaction-history';
   static const String privacyPolicy = '/privacy-policy';
+  static const String termsAndConditions = '/terms-and-conditions';
   static List<GetPage> routes = [
     GetPage(
       transition: Transition.fade,
@@ -75,11 +73,6 @@ class AppRoutes {
       transition: Transition.fade,
       name: timer,
       page: () => const WorkoutTimerScreen(),
-    ),
-    GetPage(
-      transition: Transition.fade,
-      name: choosePlan,
-      page: () => const ChoosePlanScreen(),
     ),
     GetPage(
       transition: Transition.fade,
@@ -145,13 +138,13 @@ class AppRoutes {
     ),
     GetPage(
       transition: Transition.fade,
-      name: transactionHistory,
-      page: () => const TransactionHistoryScreen(),
+      name: privacyPolicy,
+      page: () => const PrivacyPolicyScreen(),
     ),
     GetPage(
       transition: Transition.fade,
-      name: privacyPolicy,
-      page: () => const PrivacyPolicyScreen(),
+      name: termsAndConditions,
+      page: () => const TermsAndConditionsScreen(),
     ),
   ];
 }

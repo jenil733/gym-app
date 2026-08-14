@@ -4,10 +4,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:gym/scr/core/constants/app_colors.dart';
+import 'package:gym/scr/core/services/local_storage.dart';
 import 'package:gym/scr/core/utils/helper/toast_helper.dart';
 import 'package:gym/scr/core/constants/app_image.dart';
 import 'package:gym/scr/data/model/category_model.dart';
 import 'package:gym/scr/data/model/exercise_model.dart';
+import 'package:gym/scr/data/model/get_workout_model.dart';
 import 'package:gym/scr/domain/usecase/category_usecase.dart';
 import 'package:gym/scr/domain/usecase/exercise_usecase.dart';
 import 'package:gym/scr/domain/repository/workout_timing_repository.dart';
@@ -65,12 +67,16 @@ class WorkoutController extends GetxController {
   final RxInt todayWorkoutElapsedSeconds = 0.obs;
   final RxBool isWorkoutTimerRunning = false.obs;
   final RxBool isTimingSaving = false.obs;
+  final RxBool isTodayWorkoutLoading = false.obs;
   final RxnString timingError = RxnString();
   final RxList<String> completedExerciseIds = <String>[].obs;
   final RxMap<String, int> completedExerciseDurations = <String, int>{}.obs;
+  final RxBool hasRemoteCompletedWorkoutToday = false.obs;
   Timer? _workoutTimer;
   DateTime? _activeExerciseStartedAt;
   int _exerciseRequestId = 0;
+  final Set<int> _completedApiExerciseIds = <int>{};
+  final Set<String> _completedExerciseNames = <String>{};
 
   CategoryUseCase? get _useCase {
     if (_categoryUseCase != null) {
@@ -105,8 +111,28 @@ class WorkoutController extends GetxController {
   void onInit() {
     super.onInit();
     if (_useCase != null) {
-      getCategories();
+      unawaited(getCategories());
     }
+    unawaited(_restoreIfAuthenticated());
+  }
+
+  Future<void> _restoreIfAuthenticated() async {
+    final storage = Get.isRegistered<LocalStorageService>()
+        ? Get.find<LocalStorageService>()
+        : LocalStorageService();
+    await storage.init();
+    final authToken = storage.getString('auth_token')?.trim();
+    if (authToken == null || authToken.isEmpty) {
+      return;
+    }
+    await restoreTodayWorkout();
+  }
+
+  Future<void> initializeAuthenticatedData() async {
+    await Future.wait<void>([
+      if (_useCase != null && categories.isEmpty) getCategories(),
+      restoreTodayWorkout(),
+    ]);
   }
 
   Future<void> getCategories() async {
@@ -172,6 +198,7 @@ class WorkoutController extends GetxController {
 
       exerciseData.value = response.data;
       categoryExercises.assignAll(response.data!.exercises);
+      _restoreMatchingExercises(visibleCategoryExercises);
     } on DioException catch (error) {
       if (requestId != _exerciseRequestId) {
         return;
@@ -283,6 +310,7 @@ class WorkoutController extends GetxController {
       color: AppColors.primary,
       image: hasNetworkImage ? image : banner,
       imageIsNetwork: hasNetworkImage,
+      videoUrl: item.videoUrl?.trim(),
       instructions: item.howTo.isEmpty
           ? const ['Instructions are not available for this exercise yet.']
           : item.howTo,
@@ -321,6 +349,9 @@ class WorkoutController extends GetxController {
 
   bool get hasCompletedWorkout =>
       selectedExercises.isNotEmpty && nextExercise == null;
+
+  bool get hasCompletedWorkoutToday =>
+      hasRemoteCompletedWorkoutToday.value || hasCompletedWorkout;
 
   String get formattedWorkoutElapsed =>
       _formatSeconds(workoutElapsedSeconds.value);
@@ -386,6 +417,13 @@ class WorkoutController extends GetxController {
   }
 
   bool addExercise(WorkoutExercise exercise) {
+    if (hasCompletedWorkoutToday) {
+      _showMessage(
+        'Workout already completed',
+        "Today's workout is complete. You can add a new workout tomorrow.",
+      );
+      return false;
+    }
     if (isExerciseSelected(exercise)) {
       _showMessage('Already added', '${exercise.title} is in My Workout.');
       return false;
@@ -405,6 +443,135 @@ class WorkoutController extends GetxController {
       '${exercise.title} was added to My Workout.',
     );
     return true;
+  }
+
+  Future<void> restoreTodayWorkout({DateTime? now}) async {
+    final useCase = _timingUseCase;
+    if (useCase == null || isTodayWorkoutLoading.value) {
+      return;
+    }
+
+    isTodayWorkoutLoading.value = true;
+    try {
+      final response = await useCase.getHistory();
+      final isSuccessful = response.success == true || response.code == 200;
+      if (!isSuccessful || response.data == null) {
+        return;
+      }
+
+      final today = now ?? DateTime.now();
+      _completedApiExerciseIds.clear();
+      _completedExerciseNames.clear();
+      hasRemoteCompletedWorkoutToday.value = false;
+      for (final item in response.data!.history) {
+        if (!_isTodayWorkout(item, today) || !_isCompletedWorkoutLog(item)) {
+          continue;
+        }
+        hasRemoteCompletedWorkoutToday.value = true;
+        if (item.exerciseId != null) {
+          _completedApiExerciseIds.add(item.exerciseId!);
+        }
+        final name = _completedExerciseName(item);
+        if (name != null) {
+          _completedExerciseNames.add(_normalizeExerciseName(name));
+        }
+      }
+
+      todayWorkoutElapsedSeconds.value =
+          (response.data!.todayDuration ?? 0) * 60;
+      _restoreMatchingExercises(allExercises);
+      _restoreMatchingExercises(visibleCategoryExercises);
+    } on DioException {
+      // The exercise catalog remains usable when history is unavailable.
+    } catch (_) {
+      // Ignore malformed legacy history entries.
+    } finally {
+      isTodayWorkoutLoading.value = false;
+    }
+  }
+
+  void _restoreMatchingExercises(Iterable<WorkoutExercise> exercises) {
+    for (final exercise in exercises) {
+      final matchesId =
+          exercise.apiExerciseId != null &&
+          _completedApiExerciseIds.contains(exercise.apiExerciseId);
+      final matchesName = _completedExerciseNames.contains(
+        _normalizeExerciseName(exercise.title),
+      );
+      if (!matchesId && !matchesName) {
+        continue;
+      }
+      final existingNameIndex = selectedExercises.indexWhere(
+        (selected) =>
+            _normalizeExerciseName(selected.title) ==
+            _normalizeExerciseName(exercise.title),
+      );
+      if (existingNameIndex >= 0 &&
+          selectedExercises[existingNameIndex].id != exercise.id &&
+          exercise.apiExerciseId != null) {
+        completedExerciseIds.remove(selectedExercises[existingNameIndex].id);
+        selectedExercises[existingNameIndex] = exercise;
+      } else if (!isExerciseSelected(exercise) && existingNameIndex < 0) {
+        selectedExercises.add(exercise);
+      }
+      markExerciseCompleted(exercise);
+    }
+  }
+
+  bool _isTodayWorkout(WorkoutTimingHistoryItem item, DateTime today) {
+    final day = item.day?.trim().toLowerCase();
+    if (day == 'today') {
+      return true;
+    }
+    final rawDate = item.date?.trim() ?? item.day?.trim();
+    if (rawDate == null || rawDate.isEmpty) {
+      return false;
+    }
+    final datePart = RegExp(r'^\d{4}-\d{2}-\d{2}').stringMatch(rawDate);
+    final parsed = DateTime.tryParse(datePart ?? rawDate);
+    return parsed != null &&
+        parsed.year == today.year &&
+        parsed.month == today.month &&
+        parsed.day == today.day;
+  }
+
+  bool _isCompletedWorkoutLog(WorkoutTimingHistoryItem item) {
+    final status = item.status?.trim().toLowerCase();
+    return status != 'failed' &&
+        status != 'cancelled' &&
+        status != 'incomplete';
+  }
+
+  String? _completedExerciseName(WorkoutTimingHistoryItem item) {
+    final exerciseName = item.exerciseName?.trim();
+    if (exerciseName?.isNotEmpty == true) {
+      return exerciseName;
+    }
+    final notes = item.notes?.trim();
+    if (notes == null || notes.isEmpty) {
+      return null;
+    }
+    return notes.replaceFirst(
+      RegExp(r'\s+completed\s*$', caseSensitive: false),
+      '',
+    );
+  }
+
+  String _normalizeExerciseName(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  void resetSessionState() {
+    pauseWorkoutTimer();
+    selectedExercises.clear();
+    completedExerciseIds.clear();
+    completedExerciseDurations.clear();
+    _completedApiExerciseIds.clear();
+    _completedExerciseNames.clear();
+    hasRemoteCompletedWorkoutToday.value = false;
+    activeExercise.value = null;
+    workoutElapsedSeconds.value = 0;
+    todayWorkoutElapsedSeconds.value = 0;
+    _activeExerciseStartedAt = null;
   }
 
   void removeExercise(WorkoutExercise exercise) {
@@ -447,6 +614,9 @@ class WorkoutController extends GetxController {
       todayWorkoutElapsedSeconds.value =
           todayWorkoutElapsedSeconds.value - previousDuration + elapsedSeconds;
       markExerciseCompleted(exercise);
+      if (hasCompletedWorkout) {
+        hasRemoteCompletedWorkoutToday.value = true;
+      }
     }
 
     pauseWorkoutTimer();
@@ -479,9 +649,10 @@ class WorkoutController extends GetxController {
     timingError.value = null;
     try {
       // The API stores workout history in whole minutes and rejects zero.
-      final durationMinutes = elapsedSeconds <= 0
-          ? 1
-          : (elapsedSeconds / 60).ceil();
+      // Round to the nearest minute so short partial minutes do not inflate
+      // the dashboard total.
+      final roundedMinutes = (elapsedSeconds / 60).round();
+      final durationMinutes = roundedMinutes < 1 ? 1 : roundedMinutes;
       final savedEndTime = endedAt.difference(startedAt).inSeconds <= 0
           ? startedAt.add(const Duration(seconds: 1))
           : endedAt;
@@ -569,6 +740,7 @@ class WorkoutExercise {
     required this.instructions,
     this.imageAlignment = Alignment.center,
     this.imageIsNetwork = false,
+    this.videoUrl,
     this.apiExerciseId,
     this.apiCategoryId,
   });
@@ -588,12 +760,18 @@ class WorkoutExercise {
   final String image;
   final Alignment imageAlignment;
   final bool imageIsNetwork;
+  final String? videoUrl;
   final List<String> instructions;
 
   bool get hasNetworkImage {
     final uri = Uri.tryParse(image.trim());
     return imageIsNetwork ||
         (uri != null && (uri.scheme == 'http' || uri.scheme == 'https'));
+  }
+
+  bool get hasVideo {
+    final uri = Uri.tryParse(videoUrl?.trim() ?? '');
+    return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
   }
 }
 

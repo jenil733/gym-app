@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:gym/scr/core/constants/app_colors.dart';
 import 'package:gym/scr/core/utils/helper/text_helper.dart';
 import 'package:gym/scr/presentation/controller/profile_controller.dart';
@@ -56,7 +57,12 @@ class ProfileHeader extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    ProfileStat(label: 'Streak', value: controller.streak),
+                    Obx(
+                      () => ProfileStat(
+                        label: 'Streak',
+                        value: controller.streak,
+                      ),
+                    ),
                   ],
                 ),
               ],

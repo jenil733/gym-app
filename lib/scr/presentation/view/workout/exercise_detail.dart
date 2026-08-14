@@ -5,6 +5,8 @@ import 'package:gym/scr/core/utils/helper/text_helper.dart';
 import 'package:gym/scr/presentation/controller/workout_controller.dart';
 import 'package:gym/scr/presentation/widgets/common/common_app_bar.dart';
 import 'package:gym/scr/presentation/widgets/common/common_button.dart';
+import 'package:video_player/video_player.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 class ExerciseDetailScreen extends GetView<WorkoutController> {
   const ExerciseDetailScreen({super.key});
@@ -28,54 +30,7 @@ class ExerciseDetailScreen extends GetView<WorkoutController> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AspectRatio(
-                aspectRatio: 1.8,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (exercise.hasNetworkImage)
-                        Image.network(
-                          exercise.image,
-                          fit: BoxFit.cover,
-                          alignment: exercise.imageAlignment,
-                          errorBuilder: (_, _, _) => const _ImageFallback(),
-                        )
-                      else
-                        Image.asset(
-                          exercise.image,
-                          fit: BoxFit.cover,
-                          alignment: exercise.imageAlignment,
-                        ),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              AppColors.transparent,
-                              AppColors.black.withValues(alpha: 0.7),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 14,
-                        right: 14,
-                        bottom: 12,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(exercise.category, style: TextHelper.poppins),
-                            Text(exercise.focus, style: TextHelper.homeTitle2),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              _ExerciseMedia(exercise: exercise),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -133,6 +88,283 @@ class ExerciseDetailScreen extends GetView<WorkoutController> {
           );
         }),
       ),
+    );
+  }
+}
+
+class _ExerciseMedia extends StatefulWidget {
+  const _ExerciseMedia({required this.exercise});
+
+  final WorkoutExercise exercise;
+
+  @override
+  State<_ExerciseMedia> createState() => _ExerciseMediaState();
+}
+
+class _ExerciseMediaState extends State<_ExerciseMedia> {
+  VideoPlayerController? _videoController;
+  YoutubePlayerController? _youtubeController;
+  bool _isLoading = false;
+  bool _hasError = false;
+
+  Future<void> _handleTap() async {
+    final youtubeVideoId = _youtubeIdFromUrl(widget.exercise.videoUrl);
+    if (youtubeVideoId != null) {
+      _youtubeController ??= YoutubePlayerController.fromVideoId(
+        videoId: youtubeVideoId,
+        autoPlay: true,
+        params: const YoutubePlayerParams(
+          mute: false,
+          strictRelatedVideos: true,
+        ),
+      );
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+
+    final currentController = _videoController;
+    if (currentController != null) {
+      if (currentController.value.isPlaying) {
+        await currentController.pause();
+      } else {
+        await currentController.play();
+      }
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+
+    if (_isLoading || !widget.exercise.hasVideo) {
+      return;
+    }
+
+    final uri = Uri.parse(widget.exercise.videoUrl!.trim());
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    final controller = VideoPlayerController.networkUrl(uri);
+    try {
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      _videoController = controller;
+      await controller.play();
+      setState(() => _isLoading = false);
+    } catch (_) {
+      await controller.dispose();
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    _youtubeController?.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _videoController;
+    final isDirectVideoReady = controller?.value.isInitialized == true;
+    final youtubeController = _youtubeController;
+    final isYoutubeReady = youtubeController != null;
+    final isAnyVideoReady = isDirectVideoReady || isYoutubeReady;
+
+    return AspectRatio(
+      aspectRatio: 1.8,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Material(
+          color: AppColors.black,
+          child: InkWell(
+            onTap: widget.exercise.hasVideo && !isYoutubeReady
+                ? _handleTap
+                : null,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (isYoutubeReady)
+                  Center(child: YoutubePlayer(controller: youtubeController))
+                else if (isDirectVideoReady)
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: controller!.value.aspectRatio,
+                      child: VideoPlayer(controller),
+                    ),
+                  )
+                else
+                  _ExerciseImage(exercise: widget.exercise),
+                if (!isAnyVideoReady)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          AppColors.transparent,
+                          AppColors.black.withValues(alpha: 0.7),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (!isAnyVideoReady)
+                  Positioned(
+                    left: 14,
+                    right: 14,
+                    bottom: 12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.exercise.category,
+                          style: TextHelper.poppins,
+                        ),
+                        Text(
+                          widget.exercise.focus,
+                          style: TextHelper.homeTitle2,
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_isLoading)
+                  const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
+                else if (_hasError)
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.black.withValues(alpha: 0.75),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.replay_rounded, color: AppColors.white),
+                          SizedBox(width: 8),
+                          Text(
+                            'Unable to play. Tap to retry.',
+                            style: TextStyle(color: AppColors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (widget.exercise.hasVideo &&
+                    (!isDirectVideoReady || !controller!.value.isPlaying) &&
+                    !isYoutubeReady)
+                  Center(
+                    child: Container(
+                      key: const ValueKey('exercise-video-play'),
+                      height: 58,
+                      width: 58,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.92),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.black.withValues(alpha: 0.35),
+                            blurRadius: 12,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: AppColors.white,
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                if (isDirectVideoReady)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: VideoProgressIndicator(
+                      controller!,
+                      allowScrubbing: true,
+                      colors: const VideoProgressColors(
+                        playedColor: AppColors.primary,
+                        bufferedColor: AppColors.textMuted,
+                        backgroundColor: AppColors.field,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String? _youtubeIdFromUrl(String? value) {
+  final uri = Uri.tryParse(value?.trim() ?? '');
+  if (uri == null) {
+    return null;
+  }
+
+  final host = uri.host.toLowerCase().replaceFirst('www.', '');
+  if (host == 'youtu.be') {
+    return uri.pathSegments.isEmpty ? null : uri.pathSegments.first;
+  }
+
+  if (host != 'youtube.com' && host != 'm.youtube.com') {
+    return null;
+  }
+
+  final queryVideoId = uri.queryParameters['v'];
+  if (queryVideoId?.isNotEmpty == true) {
+    return queryVideoId;
+  }
+
+  if (uri.pathSegments.length >= 2 &&
+      const {'embed', 'shorts', 'live'}.contains(uri.pathSegments.first)) {
+    return uri.pathSegments[1];
+  }
+
+  return null;
+}
+
+class _ExerciseImage extends StatelessWidget {
+  const _ExerciseImage({required this.exercise});
+
+  final WorkoutExercise exercise;
+
+  @override
+  Widget build(BuildContext context) {
+    if (exercise.hasNetworkImage) {
+      return Image.network(
+        exercise.image,
+        fit: BoxFit.cover,
+        alignment: exercise.imageAlignment,
+        errorBuilder: (_, _, _) => const _ImageFallback(),
+      );
+    }
+
+    return Image.asset(
+      exercise.image,
+      fit: BoxFit.cover,
+      alignment: exercise.imageAlignment,
     );
   }
 }

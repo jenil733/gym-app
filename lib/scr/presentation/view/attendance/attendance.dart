@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:get/get.dart';
 import 'package:gym/scr/core/constants/app_colors.dart';
 import 'package:gym/scr/core/utils/helper/toast_helper.dart';
 import 'package:gym/scr/core/utils/helper/text_helper.dart';
+import 'package:gym/scr/presentation/controller/attendance_controller.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 class AttendanceScreen extends StatelessWidget {
   const AttendanceScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final controller = AttendanceController.resolve();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -23,28 +29,65 @@ class AttendanceScreen extends StatelessWidget {
                 style: TextHelper.homeSubtitle,
               ),
               const SizedBox(height: 20),
-              const _ScannerCard(),
+              _ScannerCard(controller: controller),
               const SizedBox(height: 18),
               Text('Recent Attendance', style: TextHelper.homeTitle2),
               const SizedBox(height: 12),
-              const _AttendanceHistoryTile(
-                day: 'Today',
-                time: 'Ready to scan',
-                status: 'Pending',
-                isPending: true,
-              ),
-              const SizedBox(height: 10),
-              const _AttendanceHistoryTile(
-                day: 'Last visit',
-                time: '07:12 AM',
-                status: 'Present',
-              ),
-              const SizedBox(height: 10),
-              const _AttendanceHistoryTile(
-                day: 'Previous visit',
-                time: '06:48 AM',
-                status: 'Present',
-              ),
+              Obx(() {
+                if (controller.isLoadingHistory.value &&
+                    controller.attendance.value == null) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  );
+                }
+
+                final history = controller.history;
+                if (history.isEmpty) {
+                  return _AttendanceHistoryTile(
+                    day: 'Today',
+                    time: controller.todayMarked
+                        ? controller.latestAttendance.value?.date ??
+                              'Marked today'
+                        : 'Ready to scan',
+                    status: controller.todayMarked ? 'Present' : 'Pending',
+                    isPending: !controller.todayMarked,
+                  );
+                }
+
+                return Column(
+                  children: List.generate(history.length, (index) {
+                    final item = history[index];
+                    final status = item.status?.trim().isNotEmpty == true
+                        ? item.status!.trim()
+                        : 'Present';
+                    final normalizedStatus = status.toLowerCase();
+                    final isPending =
+                        normalizedStatus != 'present' &&
+                        normalizedStatus != 'marked';
+
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == history.length - 1 ? 0 : 10,
+                      ),
+                      child: _AttendanceHistoryTile(
+                        day: item.label?.trim().isNotEmpty == true
+                            ? item.label!.trim()
+                            : item.date ?? 'Attendance',
+                        time: item.checkInTime?.trim().isNotEmpty == true
+                            ? item.checkInTime!.trim()
+                            : item.date ?? '--',
+                        status: status,
+                        isPending: isPending,
+                      ),
+                    );
+                  }),
+                );
+              }),
             ],
           ),
         ),
@@ -54,7 +97,31 @@ class AttendanceScreen extends StatelessWidget {
 }
 
 class _ScannerCard extends StatelessWidget {
-  const _ScannerCard();
+  const _ScannerCard({required this.controller});
+
+  final AttendanceController controller;
+
+  Future<void> _openScanner(BuildContext context) async {
+    final supportsScanner =
+        kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+    if (!supportsScanner) {
+      ToastHelper.info(
+        'QR scanner',
+        'QR scanning is available on Android, iOS, macOS, and web.',
+      );
+      return;
+    }
+
+    final qrCode = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(builder: (_) => const _QrScannerScreen()),
+    );
+    if (qrCode != null && context.mounted) {
+      await controller.submitQr(qrCode);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,25 +177,120 @@ class _ScannerCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                ToastHelper.info(
-                  'Attendance scanner',
-                  'QR scanner is ready to connect with the gym QR system.',
-                );
-              },
-              icon: const Icon(Icons.qr_code_2_rounded, size: 21),
-              label: Text('Scan QR Code', style: TextHelper.button),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+          Obx(
+            () => SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: controller.isSubmitting.value
+                    ? null
+                    : () => _openScanner(context),
+                icon: controller.isSubmitting.value
+                    ? const SizedBox(
+                        width: 19,
+                        height: 19,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.white,
+                        ),
+                      )
+                    : const Icon(Icons.qr_code_2_rounded, size: 21),
+                label: Text(
+                  controller.isSubmitting.value
+                      ? 'Marking Attendance...'
+                      : 'Scan QR Code',
+                  style: TextHelper.button,
                 ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QrScannerScreen extends StatefulWidget {
+  const _QrScannerScreen();
+
+  @override
+  State<_QrScannerScreen> createState() => _QrScannerScreenState();
+}
+
+class _QrScannerScreenState extends State<_QrScannerScreen> {
+  final MobileScannerController _scannerController = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+  );
+  bool _hasResult = false;
+
+  Future<void> _handleDetection(BarcodeCapture capture) async {
+    if (_hasResult || capture.barcodes.isEmpty) {
+      return;
+    }
+
+    final value = capture.barcodes.first.rawValue?.trim();
+    if (value == null || value.isEmpty) {
+      return;
+    }
+
+    _hasResult = true;
+    await _scannerController.stop();
+    if (mounted) {
+      Navigator.of(context).pop(value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.black,
+      appBar: AppBar(
+        backgroundColor: AppColors.black,
+        foregroundColor: AppColors.white,
+        title: const Text('Scan Gym QR'),
+      ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          MobileScanner(
+            controller: _scannerController,
+            onDetect: _handleDetection,
+          ),
+          Center(
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.primary, width: 3),
+              ),
+            ),
+          ),
+          const Positioned(
+            left: 24,
+            right: 24,
+            bottom: 42,
+            child: Text(
+              'Place the gym QR code inside the frame',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),

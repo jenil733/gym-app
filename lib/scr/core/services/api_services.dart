@@ -31,6 +31,7 @@ class ApiService {
             final token = _storage.getString("auth_token")?.trim();
             if (token != null && token.isNotEmpty) {
               options.headers["Authorization"] = "Bearer $token";
+              options.extra['authTokenUsed'] = token;
             }
           }
           if (kDebugMode) {
@@ -70,7 +71,15 @@ class ApiService {
           }
 
           if (statusCode == 401 && !isAuthRequest) {
-            _handleUnauthorized();
+            final failedToken = e.requestOptions.extra['authTokenUsed']
+                ?.toString()
+                .trim();
+            final currentToken = _storage.getString('auth_token')?.trim();
+            if (failedToken != null &&
+                failedToken.isNotEmpty &&
+                failedToken == currentToken) {
+              _handleUnauthorized();
+            }
           } else if (!isRouteMissing && !isAuthRequest && !suppressErrorToast) {
             ToastHelper.error('Error', errorMessage.toString());
           }

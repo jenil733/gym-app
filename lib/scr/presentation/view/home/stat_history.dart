@@ -19,15 +19,18 @@ class _StatHistoryScreenState extends State<StatHistoryScreen> {
   HomeController? _homeController;
 
   bool get _isWorkoutHistory => widget.stat.title == 'Workout Time';
+  bool get _isStepHistory => widget.stat.title == 'Steps';
 
   @override
   void initState() {
     super.initState();
-    if (_isWorkoutHistory) {
+    if (_isWorkoutHistory || _isStepHistory) {
       _homeController = HomeController.resolve();
-      Future<void>.microtask(
-        () => _homeController?.getWorkoutHistory(force: true),
-      );
+      if (_isWorkoutHistory) {
+        Future<void>.microtask(
+          () => _homeController?.getWorkoutHistory(force: true),
+        );
+      }
     }
   }
 
@@ -37,13 +40,20 @@ class _StatHistoryScreenState extends State<StatHistoryScreen> {
       return Obx(() {
         final controller = _homeController!;
         final liveStat = controller.stats.firstWhereOrNull(
-          (item) => item.title == 'Workout Time',
+          (item) => item.title == widget.stat.title,
         );
         return _HistoryScaffold(
           stat: liveStat ?? widget.stat,
-          isLoading: controller.isWorkoutHistoryLoading.value,
-          error: controller.workoutHistoryError.value,
-          onRetry: () => controller.getWorkoutHistory(force: true),
+          isLoading: _isStepHistory
+              ? controller.isFootstepHistoryLoading.value
+              : controller.isWorkoutHistoryLoading.value,
+          error: _isStepHistory
+              ? controller.footstepError.value
+              : controller.workoutHistoryError.value,
+          onRetry: _isStepHistory
+              ? () => controller.getFootstepHistory(force: true)
+              : () => controller.getWorkoutHistory(force: true),
+          onResetSteps: _isStepHistory ? controller.resetTodaySteps : null,
         );
       });
     }
@@ -58,18 +68,31 @@ class _HistoryScaffold extends StatelessWidget {
     this.isLoading = false,
     this.error,
     this.onRetry,
+    this.onResetSteps,
   });
 
   final HomeStatItem stat;
   final bool isLoading;
   final String? error;
   final VoidCallback? onRetry;
+  final Future<void> Function()? onResetSteps;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: CommonAppBar(title: '${stat.title} History'),
+      appBar: CommonAppBar(
+        title: '${stat.title} History',
+        actions: [
+          if (onResetSteps != null)
+            IconButton(
+              key: const ValueKey('reset-steps-button'),
+              tooltip: 'Reset today steps',
+              onPressed: onResetSteps,
+              icon: const Icon(Icons.refresh_rounded, color: AppColors.white),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),

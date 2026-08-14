@@ -5,7 +5,9 @@ import 'package:gym/scr/core/constants/app_colors.dart';
 import 'package:gym/scr/core/services/step_tracking_service.dart';
 import 'package:gym/scr/data/model/getweight_model.dart';
 import 'package:gym/scr/data/model/get_workout_model.dart';
+import 'package:gym/scr/data/model/footstep_history.dart' as footstep_history;
 import 'package:gym/scr/data/model/wrk_history_model.dart';
+import 'package:gym/scr/domain/usecase/footstep_usecase.dart';
 import 'package:gym/scr/domain/usecase/weight_history_usecase.dart';
 import 'package:gym/scr/domain/usecase/workout_history_usecase.dart';
 import 'package:gym/scr/domain/usecase/workout_timing_usecase.dart';
@@ -18,6 +20,7 @@ class HomeController extends GetxController {
     this._stepTrackingService,
     this._profileUseCase,
     this._workoutTimingUseCase,
+    this._footstepUseCase,
   ]);
 
   final WorkoutHistoryUseCase? _workoutHistoryUseCase;
@@ -25,9 +28,18 @@ class HomeController extends GetxController {
   final StepTrackingService? _stepTrackingService;
   final ProfileUseCase? _profileUseCase;
   final WorkoutTimingUseCase? _workoutTimingUseCase;
+  final FootstepUseCase? _footstepUseCase;
   Worker? _stepWorker;
+  Worker? _stepPostWorker;
+  List<HomeStatHistoryItem> _remoteStepHistory = const [];
+  int _remoteTodaySteps = 0;
+  int _remoteYesterdaySteps = 0;
+  String _observedStepDate = '';
 
   final RxString userName = 'Rahul'.obs;
+  final RxDouble profileHeight = 0.0.obs;
+  final RxDouble profileWeight = 0.0.obs;
+  final RxBool hasLoadedProfileMeasurements = false.obs;
   final String motivationTitle = 'Consistency is your superpower.';
   final String motivationSubtitle = 'Keep showing up for yourself!';
   final HomeWorkout workout = const HomeWorkout(
@@ -40,37 +52,13 @@ class HomeController extends GetxController {
     HomeStatItem(
       icon: Icons.watch_later_rounded,
       title: 'Workout Time',
-      value: '45',
-      unit: 'min',
-      trend: '5%',
+      value: '0',
+      unit: 'min 00 sec',
+      trend: 'No data',
       trendUp: true,
       color: AppColors.statWorkoutTime,
-      history: [
-        HomeStatHistoryItem(
-          label: 'Today',
-          value: '45',
-          unit: 'min',
-          note: 'Chest workout completed',
-        ),
-        HomeStatHistoryItem(
-          label: 'Yesterday',
-          value: '38',
-          unit: 'min',
-          note: 'Back and biceps',
-        ),
-        HomeStatHistoryItem(
-          label: 'Monday',
-          value: '52',
-          unit: 'min',
-          note: 'Leg day',
-        ),
-        HomeStatHistoryItem(
-          label: 'Sunday',
-          value: '30',
-          unit: 'min',
-          note: 'Cardio session',
-        ),
-      ],
+      showTrendIcon: false,
+      history: const [],
     ),
     HomeStatItem(
       icon: Icons.directions_walk_rounded,
@@ -98,6 +86,9 @@ class HomeController extends GetxController {
   final RxnString workoutHistoryError = RxnString();
   final RxBool isWeightHistoryLoading = false.obs;
   final RxnString weightHistoryError = RxnString();
+  final RxBool isFootstepHistoryLoading = false.obs;
+  final RxBool isPostingFootstep = false.obs;
+  final RxnString footstepError = RxnString();
 
   static HomeController resolve() {
     if (Get.isRegistered<HomeController>()) {
@@ -123,6 +114,9 @@ class HomeController extends GetxController {
     final timingUseCase = Get.isRegistered<WorkoutTimingUseCase>()
         ? Get.find<WorkoutTimingUseCase>()
         : null;
+    final footstepUseCase = Get.isRegistered<FootstepUseCase>()
+        ? Get.find<FootstepUseCase>()
+        : null;
     return Get.put(
       HomeController(
         useCase,
@@ -130,6 +124,7 @@ class HomeController extends GetxController {
         stepService,
         profileUseCase,
         timingUseCase,
+        footstepUseCase,
       ),
     );
   }
@@ -172,6 +167,15 @@ class HomeController extends GetxController {
         : null;
   }
 
+  FootstepUseCase? get _footstepLoader {
+    if (_footstepUseCase != null) {
+      return _footstepUseCase;
+    }
+    return Get.isRegistered<FootstepUseCase>()
+        ? Get.find<FootstepUseCase>()
+        : null;
+  }
+
   @override
   void onInit() {
     super.onInit();
@@ -184,12 +188,143 @@ class HomeController extends GetxController {
       _stepWorker = everAll([
         stepService.todaySteps,
         stepService.yesterdaySteps,
+        stepService.trackingDate,
         stepService.status,
         stepService.hasSensorReading,
         stepService.notificationEnabled,
       ], (_) => _syncStepStat());
-      stepService.start();
+      _stepPostWorker = debounce<int>(
+        stepService.todaySteps,
+        postFootstep,
+        time: const Duration(seconds: 2),
+      );
+      _initializeStepTracking(stepService);
+    } else {
+      getFootstepHistory();
     }
+  }
+
+  Future<void> _initializeStepTracking(StepTrackingService stepService) async {
+    try {
+      await stepService.start();
+    } finally {
+      await getFootstepHistory();
+    }
+  }
+
+  Future<void> getFootstepHistory({bool force = false}) async {
+    final useCase = _footstepLoader;
+    if (useCase == null || (isFootstepHistoryLoading.value && !force)) {
+      return;
+    }
+
+    isFootstepHistoryLoading.value = true;
+    footstepError.value = null;
+    try {
+      final response = await useCase.getHistory();
+      final isSuccessful =
+          response.success == true ||
+          response.code == 200 ||
+          response.code == 201;
+      if (!isSuccessful || response.data == null) {
+        footstepError.value =
+            response.message ?? 'Unable to load footstep history.';
+        return;
+      }
+
+      _remoteTodaySteps = response.data!.todaySteps ?? 0;
+      await _stepTrackingService?.reconcileTodaySteps(_remoteTodaySteps);
+      final remoteHistory = response.data!.history ?? const [];
+      _remoteYesterdaySteps = 0;
+      for (final item in remoteHistory) {
+        if (item.label?.trim().toLowerCase() == 'yesterday') {
+          _remoteYesterdaySteps = item.steps ?? 0;
+          break;
+        }
+      }
+      _remoteStepHistory = remoteHistory
+          .map(_mapFootstepHistoryItem)
+          .toList(growable: false);
+      _syncStepStat();
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      footstepError.value =
+          responseData is Map && responseData['message'] != null
+          ? responseData['message'].toString()
+          : 'Unable to load footstep history. Please check your connection.';
+    } catch (_) {
+      footstepError.value =
+          'Something went wrong while loading footstep history.';
+    } finally {
+      isFootstepHistoryLoading.value = false;
+    }
+  }
+
+  Future<void> postFootstep(int steps, {bool force = false}) async {
+    final useCase = _footstepLoader;
+    if (useCase == null ||
+        steps < 0 ||
+        (!force && steps <= _remoteTodaySteps) ||
+        isPostingFootstep.value) {
+      return;
+    }
+
+    isPostingFootstep.value = true;
+    footstepError.value = null;
+    try {
+      final response = await useCase.postFootstep(steps);
+      final isSuccessful =
+          response.success == true ||
+          response.code == 200 ||
+          response.code == 201;
+      if (!isSuccessful) {
+        footstepError.value = response.message ?? 'Unable to save footsteps.';
+        return;
+      }
+      _remoteTodaySteps = steps;
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      footstepError.value =
+          responseData is Map && responseData['message'] != null
+          ? responseData['message'].toString()
+          : 'Unable to save footsteps. Please check your connection.';
+    } catch (_) {
+      footstepError.value = 'Something went wrong while saving footsteps.';
+    } finally {
+      isPostingFootstep.value = false;
+    }
+  }
+
+  Future<void> resetTodaySteps() async {
+    await _stepTrackingService?.resetTodaySteps();
+    _remoteTodaySteps = 0;
+    _syncStepStat();
+    await postFootstep(0, force: true);
+  }
+
+  HomeStatHistoryItem _mapFootstepHistoryItem(footstep_history.History item) {
+    return HomeStatHistoryItem(
+      label: item.label?.trim().isNotEmpty == true
+          ? item.label!.trim()
+          : _footstepDateLabel(item.date),
+      value: '${item.steps ?? 0}',
+      unit: 'steps',
+      note: item.subLabel?.trim().isNotEmpty == true
+          ? item.subLabel!.trim()
+          : 'Daily footsteps',
+    );
+  }
+
+  String _footstepDateLabel(String? value) {
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return 'Activity';
+    }
+    final date = DateTime.tryParse(normalized);
+    return date == null
+        ? normalized
+        : '${date.day.toString().padLeft(2, '0')}/'
+              '${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   Future<void> getProfileName() async {
@@ -202,11 +337,15 @@ class HomeController extends GetxController {
     userName.value = '';
     try {
       final response = await useCase();
-      final name = response.data?.user?.name?.trim();
-      if ((response.success == true || response.code == 200) &&
-          name != null &&
-          name.isNotEmpty) {
-        userName.value = name;
+      final user = response.data?.user;
+      final name = user?.name?.trim();
+      if ((response.success == true || response.code == 200) && user != null) {
+        if (name != null && name.isNotEmpty) {
+          userName.value = name;
+        }
+        profileHeight.value = _metricNumber(user.height);
+        profileWeight.value = _metricNumber(user.weight);
+        hasLoadedProfileMeasurements.value = true;
       }
     } catch (_) {
       userName.value = '';
@@ -280,7 +419,7 @@ class HomeController extends GetxController {
       icon: Icons.watch_later_rounded,
       title: 'Workout Time',
       value: '${data.todayDuration ?? 0}',
-      unit: 'min',
+      unit: 'min 00 sec',
       trend: '${percentChange.abs()}%',
       trendUp: isTrendingUp,
       color: AppColors.statWorkoutTime,
@@ -291,7 +430,7 @@ class HomeController extends GetxController {
                   ? item.day!.trim()
                   : 'Workout',
               value: '${item.durationMinutes ?? 0}',
-              unit: 'min',
+              unit: 'min 00 sec',
               note: item.notes?.trim().isNotEmpty == true
                   ? item.notes!.trim()
                   : 'Workout completed',
@@ -313,7 +452,7 @@ class HomeController extends GetxController {
       icon: Icons.watch_later_rounded,
       title: 'Workout Time',
       value: '${data.todayDuration ?? 0}',
-      unit: 'min',
+      unit: 'min 00 sec',
       trend: '${percentChange.abs()}%',
       trendUp: isTrendingUp,
       color: AppColors.statWorkoutTime,
@@ -324,7 +463,7 @@ class HomeController extends GetxController {
                   ? item.day!.trim()
                   : 'Workout',
               value: '${item.durationMinutes ?? 0}',
-              unit: 'min',
+              unit: 'min 00 sec',
               note: item.notes?.trim().isNotEmpty == true
                   ? item.notes!.trim()
                   : 'Workout completed',
@@ -336,21 +475,31 @@ class HomeController extends GetxController {
 
   void _syncStepStat() {
     final service = _stepTrackingService;
-    if (service == null) {
-      return;
+    final serviceDate = service?.trackingDate.value ?? '';
+    if (serviceDate.isNotEmpty && serviceDate != _observedStepDate) {
+      _observedStepDate = serviceDate;
+      _remoteTodaySteps = 0;
     }
-    final today = service.todaySteps.value;
-    final yesterday = service.yesterdaySteps.value;
+    final localToday = service?.todaySteps.value ?? 0;
+    final today = localToday > _remoteTodaySteps
+        ? localToday
+        : _remoteTodaySteps;
+    final localYesterday = service?.yesterdaySteps.value ?? 0;
+    final yesterday = localYesterday > 0
+        ? localYesterday
+        : _remoteYesterdaySteps;
     final stepIndex = stats.indexWhere((item) => item.title == 'Steps');
     if (stepIndex < 0) {
       return;
     }
 
-    final isTracking = service.status.value == StepTrackingStatus.tracking;
+    final isTracking = service?.status.value == StepTrackingStatus.tracking;
     final percent = yesterday <= 0
         ? 0
         : (((today - yesterday) / yesterday) * 100).round();
-    final statusText = !service.notificationEnabled.value
+    final statusText = service == null
+        ? 'Today'
+        : !service.notificationEnabled.value
         ? 'Notification'
         : switch (service.status.value) {
             StepTrackingStatus.idle => 'Starting',
@@ -363,10 +512,12 @@ class HomeController extends GetxController {
             StepTrackingStatus.permissionDenied => 'Permission',
             StepTrackingStatus.unavailable => 'Unavailable',
           };
-    final footer = !service.notificationEnabled.value
+    final footer = service == null
+        ? "today's activity"
+        : !service.notificationEnabled.value
         ? 'tap to enable step notification'
         : switch (service.status.value) {
-            StepTrackingStatus.idle => 'starting step sensor',
+            StepTrackingStatus.idle => 'starting activity model',
             StepTrackingStatus.tracking =>
               !service.hasSensorReading.value
                   ? 'walk a few steps to begin'
@@ -375,7 +526,7 @@ class HomeController extends GetxController {
                   : "today's activity",
             StepTrackingStatus.permissionDenied =>
               'tap to enable activity access',
-            StepTrackingStatus.unavailable => 'tap to retry the step sensor',
+            StepTrackingStatus.unavailable => 'tap to retry motion tracking',
           };
 
     stats[stepIndex] = HomeStatItem(
@@ -388,7 +539,13 @@ class HomeController extends GetxController {
       color: AppColors.primary,
       showTrendIcon: isTracking && yesterday > 0,
       footer: footer,
-      history: [
+      history: _stepHistory(today, yesterday),
+    );
+  }
+
+  List<HomeStatHistoryItem> _stepHistory(int today, int yesterday) {
+    if (_remoteStepHistory.isEmpty) {
+      return [
         HomeStatHistoryItem(
           label: 'Today',
           value: '$today',
@@ -401,8 +558,25 @@ class HomeController extends GetxController {
           unit: 'steps',
           note: 'Previous day steps',
         ),
-      ],
+      ];
+    }
+
+    final history = List<HomeStatHistoryItem>.from(_remoteStepHistory);
+    final todayIndex = history.indexWhere(
+      (item) => item.label.trim().toLowerCase() == 'today',
     );
+    final todayItem = HomeStatHistoryItem(
+      label: 'Today',
+      value: '$today',
+      unit: 'steps',
+      note: 'Daily footsteps',
+    );
+    if (todayIndex < 0) {
+      history.insert(0, todayItem);
+    } else {
+      history[todayIndex] = todayItem;
+    }
+    return history;
   }
 
   final RxList<HomeBodyMetric> bodyMetrics = <HomeBodyMetric>[
@@ -500,6 +674,7 @@ class HomeController extends GetxController {
   }
 
   void applyWeight(double weight) {
+    profileWeight.value = weight;
     final previousWeight = bodyMetrics.isEmpty ? null : bodyMetrics.first;
     final updatedHistory = <HomeBodyHistoryItem>[
       HomeBodyHistoryItem(
@@ -527,12 +702,19 @@ class HomeController extends GetxController {
     }
   }
 
+  void applyMeasurements({required double height, required double weight}) {
+    profileHeight.value = height;
+    profileWeight.value = weight;
+    hasLoadedProfileMeasurements.value = true;
+    applyWeight(weight);
+  }
+
   HomeStatItem _emptyWorkoutStat() {
     return HomeStatItem(
       icon: Icons.watch_later_rounded,
       title: 'Workout Time',
       value: '0',
-      unit: 'min',
+      unit: 'min 00 sec',
       trend: 'No data',
       trendUp: true,
       color: AppColors.statWorkoutTime,
@@ -545,6 +727,13 @@ class HomeController extends GetxController {
     return value == value.roundToDouble()
         ? value.toStringAsFixed(0)
         : value.toStringAsFixed(1);
+  }
+
+  double _metricNumber(String? value) {
+    return double.tryParse(
+          (value ?? '').replaceAll(RegExp(r'[^0-9.]'), '').trim(),
+        ) ??
+        0;
   }
 
   String _withoutUnit(String? value, String unit) {
@@ -584,6 +773,7 @@ class HomeController extends GetxController {
   @override
   void onClose() {
     _stepWorker?.dispose();
+    _stepPostWorker?.dispose();
     super.onClose();
   }
 }

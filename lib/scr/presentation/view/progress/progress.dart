@@ -26,7 +26,7 @@ class ProgressScreen extends GetView<ProgressController> {
               Text('Progress', style: TextHelper.homeTitle),
               const SizedBox(height: 2),
               Text(
-                'Track your weight and history.',
+                'Stay focused on your six-month target.',
                 style: TextHelper.homeSubtitle,
               ),
               const SizedBox(height: 18),
@@ -34,80 +34,6 @@ class ProgressScreen extends GetView<ProgressController> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class ChartCard extends StatelessWidget {
-  const ChartCard({super.key, required this.points, required this.rangeLabel});
-
-  final List<WeightGraphPoint> points;
-  final String rangeLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Weight Graph',
-                  style: TextHelper.homeTitle.copyWith(fontSize: 16),
-                ),
-              ),
-              Text(
-                rangeLabel,
-                style: TextHelper.homeSubtitle.copyWith(fontSize: 10),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          if (points.isEmpty)
-            SizedBox(
-              height: 170,
-              child: Center(
-                child: Text(
-                  'No measurements in this range.',
-                  style: TextHelper.homeSubtitle,
-                ),
-              ),
-            )
-          else ...[
-            SizedBox(
-              height: 150,
-              width: double.infinity,
-              child: CustomPaint(
-                painter: WeightChartPainter(
-                  points: points.map((point) => point.weight).toList(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                for (final point in points)
-                  Flexible(
-                    child: Text(
-                      point.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextHelper.homeSubtitle.copyWith(fontSize: 8),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ],
       ),
     );
   }

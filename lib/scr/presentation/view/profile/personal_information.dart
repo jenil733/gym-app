@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:gym/scr/core/constants/app_colors.dart';
+import 'package:gym/scr/core/constants/fitness_goals.dart';
 import 'package:gym/scr/core/utils/helper/text_helper.dart';
 import 'package:gym/scr/core/utils/helper/toast_helper.dart';
 import 'package:gym/scr/presentation/controller/profile_controller.dart';
@@ -22,7 +23,10 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
   late final ProfileController _controller;
   late final TextEditingController _nameController;
   late final TextEditingController _mobileController;
+  late final TextEditingController _emailController;
   late final TextEditingController _genderController;
+  late final TextEditingController _bloodGroupController;
+  String? _selectedFitnessGoal;
   late final TextEditingController _locationController;
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
@@ -36,18 +40,43 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
         : Get.put(ProfileController());
     _nameController = TextEditingController(text: _controller.userName);
     _mobileController = TextEditingController(text: _controller.phone);
+    _emailController = TextEditingController(text: _controller.email);
     _genderController = TextEditingController(text: _controller.gender);
+    _bloodGroupController = TextEditingController(text: _controller.bloodGroup);
+    _selectedFitnessGoal = _fitnessGoalOrDefault(_controller.fitnessGoal);
     _locationController = TextEditingController(text: _controller.location);
     _selectedImageBytes = _controller.profileImageBytes;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfile());
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _mobileController.dispose();
+    _emailController.dispose();
     _genderController.dispose();
+    _bloodGroupController.dispose();
     _locationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadProfile() async {
+    await _controller.getProfile();
+    if (!mounted) {
+      return;
+    }
+    _populateFieldsFromProfile();
+  }
+
+  void _populateFieldsFromProfile() {
+    _nameController.text = _controller.userName;
+    _mobileController.text = _controller.phone;
+    _emailController.text = _controller.email;
+    _genderController.text = _controller.gender;
+    _bloodGroupController.text = _controller.bloodGroup;
+    _selectedFitnessGoal = _fitnessGoalOrDefault(_controller.fitnessGoal);
+    _locationController.text = _controller.location;
+    setState(() {});
   }
 
   Future<void> _saveDetails() async {
@@ -58,7 +87,10 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
     setState(() => _isSaving = true);
     final success = await _controller.updatePersonalInformation(
       userName: _nameController.text.trim(),
+      email: _emailController.text.trim(),
       gender: _genderController.text.trim(),
+      bloodGroup: _bloodGroupController.text.trim(),
+      fitnessGoal: _selectedFitnessGoal?.trim() ?? '',
       location: _locationController.text.trim(),
       imageBytes: _selectedImageBytes,
       imageName: _selectedImageName,
@@ -69,6 +101,7 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
     setState(() => _isSaving = false);
 
     if (success) {
+      _populateFieldsFromProfile();
       ToastHelper.success('Profile updated', 'Personal information updated');
     } else {
       ToastHelper.error(
@@ -142,10 +175,34 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
                 readOnly: true,
               ),
               _ProfileTextBox(
+                fieldKey: const ValueKey('profile-email-input'),
+                icon: Icons.email_rounded,
+                label: 'Email',
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              _ProfileTextBox(
                 fieldKey: const ValueKey('profile-gender-input'),
                 icon: Icons.wc_rounded,
                 label: 'Gender',
                 controller: _genderController,
+              ),
+              _ProfileTextBox(
+                fieldKey: const ValueKey('profile-blood-group-input'),
+                icon: Icons.bloodtype_rounded,
+                label: 'Blood Group',
+                controller: _bloodGroupController,
+                textCapitalization: TextCapitalization.characters,
+              ),
+              _ProfileDropdownBox(
+                fieldKey: const ValueKey('profile-fitness-goal-input'),
+                icon: Icons.track_changes_rounded,
+                label: 'Fitness Goal',
+                value: _selectedFitnessGoal,
+                items: _fitnessGoalOptions,
+                onChanged: (value) {
+                  setState(() => _selectedFitnessGoal = value);
+                },
               ),
               _ProfileTextBox(
                 fieldKey: const ValueKey('profile-location-input'),
@@ -167,6 +224,21 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
         ),
       ),
     );
+  }
+
+  List<String> get _fitnessGoalOptions {
+    final current = _selectedFitnessGoal?.trim();
+    if (current == null ||
+        current.isEmpty ||
+        FitnessGoals.values.contains(current)) {
+      return FitnessGoals.values;
+    }
+    return [current, ...FitnessGoals.values];
+  }
+
+  String _fitnessGoalOrDefault(String value) {
+    final normalized = value.trim();
+    return normalized.isEmpty ? FitnessGoals.values.first : normalized;
   }
 }
 
@@ -232,6 +304,7 @@ class _ProfilePhotoCard extends StatelessWidget {
                   color: AppColors.primary,
                   borderRadius: BorderRadius.circular(999),
                   child: InkWell(
+                    key: const ValueKey('profile-photo-upload-button'),
                     onTap: onChangePhoto,
                     borderRadius: BorderRadius.circular(999),
                     child: const SizedBox(
@@ -264,22 +337,6 @@ class _ProfilePhotoCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(userLevel, style: TextHelper.homeSubtitle),
-                const SizedBox(height: 10),
-                TextButton.icon(
-                  key: const ValueKey('profile-change-photo-button'),
-                  onPressed: onChangePhoto,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 34),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.edit_rounded, size: 17),
-                  label: Text(
-                    'Change Photo',
-                    style: TextHelper.link.copyWith(fontSize: 11),
-                  ),
-                ),
               ],
             ),
           ),
@@ -296,6 +353,8 @@ class _ProfileTextBox extends StatelessWidget {
     required this.label,
     required this.controller,
     this.readOnly = false,
+    this.keyboardType,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   final Key fieldKey;
@@ -303,6 +362,8 @@ class _ProfileTextBox extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final bool readOnly;
+  final TextInputType? keyboardType;
+  final TextCapitalization textCapitalization;
 
   @override
   Widget build(BuildContext context) {
@@ -332,6 +393,8 @@ class _ProfileTextBox extends StatelessWidget {
               key: fieldKey,
               controller: controller,
               readOnly: readOnly,
+              keyboardType: keyboardType,
+              textCapitalization: textCapitalization,
               style: TextHelper.fieldText,
               decoration: InputDecoration(
                 labelText: label,
@@ -358,6 +421,87 @@ class _ProfileTextBox extends StatelessWidget {
                   borderSide: const BorderSide(color: AppColors.primary),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileDropdownBox extends StatelessWidget {
+  const _ProfileDropdownBox({
+    required this.fieldKey,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final Key fieldKey;
+  final IconData icon;
+  final String label;
+  final String? value;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedValue = items.contains(value) ? value : null;
+    return Container(
+      key: fieldKey,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('profile-fitness-goal-value-$selectedValue'),
+              initialValue: selectedValue,
+              isExpanded: true,
+              dropdownColor: AppColors.field,
+              style: TextHelper.fieldText,
+              iconEnabledColor: AppColors.primary,
+              decoration: InputDecoration(
+                labelText: label,
+                labelStyle: TextHelper.fieldLabel,
+                filled: true,
+                fillColor: AppColors.field,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+              ),
+              items: items
+                  .map(
+                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                  )
+                  .toList(growable: false),
+              onChanged: onChanged,
             ),
           ),
         ],

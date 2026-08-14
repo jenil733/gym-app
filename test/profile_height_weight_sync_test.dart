@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
-import 'package:gym/scr/core/services/local_storage.dart';
+import 'package:gym/scr/data/model/get_attendance_model.dart';
 import 'package:gym/scr/data/model/heightweight_model.dart';
 import 'package:gym/scr/domain/repository/height_weight_repository.dart';
 import 'package:gym/scr/domain/usecase/height_weight_usecase.dart';
+import 'package:gym/scr/presentation/controller/attendance_controller.dart';
 import 'package:gym/scr/presentation/controller/home_controller.dart';
 import 'package:gym/scr/presentation/controller/profile_controller.dart';
 import 'package:gym/scr/presentation/view/profile/profile.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   tearDown(Get.reset);
@@ -56,28 +56,29 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  test('daily streak increments after a consecutive-day visit', () async {
-    final yesterday = DateTime.now().subtract(const Duration(days: 1));
-    final yesterdayKey =
-        '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
-    SharedPreferences.setMockInitialValues({
-      'profile_daily_streak_count': 3,
-      'profile_daily_streak_last_visit': yesterdayKey,
-    });
-    final storage = LocalStorageService();
-    await storage.init();
-
-    final controller = Get.put(
-      ProfileController(null, null, null, null, storage),
+  test('profile streak uses consecutive attendance days', () {
+    final now = DateTime.now();
+    String key(DateTime date) =>
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    final attendanceController = Get.put(AttendanceController());
+    attendanceController.attendance.value = AttendanceData(
+      todayMarked: true,
+      history: [
+        AttendanceHistory(date: key(now), status: 'Present'),
+        AttendanceHistory(
+          date: key(now.subtract(const Duration(days: 1))),
+          status: 'Present',
+        ),
+        AttendanceHistory(
+          date: key(now.subtract(const Duration(days: 2))),
+          status: 'Present',
+        ),
+      ],
     );
-    for (var attempt = 0; attempt < 20; attempt += 1) {
-      if (controller.streak == '4 days') {
-        break;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
+    final controller = Get.put(ProfileController());
 
-    expect(controller.streak, '4 days');
+    expect(controller.streak, '3 days');
   });
 }
 

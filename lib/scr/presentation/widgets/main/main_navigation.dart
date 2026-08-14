@@ -6,7 +6,6 @@ import 'package:gym/scr/presentation/controller/main_navigation_controller.dart'
 import 'package:gym/scr/presentation/view/attendance/attendance.dart';
 import 'package:gym/scr/presentation/view/home/home.dart';
 import 'package:gym/scr/presentation/view/profile/profile.dart';
-import 'package:gym/scr/presentation/view/progress/progress.dart';
 import 'package:gym/scr/presentation/view/workout/workout.dart';
 
 class MainNavigationScreen extends GetView<MainNavigationController> {
@@ -18,12 +17,7 @@ class MainNavigationScreen extends GetView<MainNavigationController> {
   static const List<_BottomBarItem> _items = [
     _BottomBarItem(label: 'Home', icon: Icons.home_rounded),
     _BottomBarItem(label: 'Workouts', icon: Icons.fitness_center_rounded),
-    _BottomBarItem(
-      label: 'Attendance',
-      icon: Icons.qr_code_scanner_rounded,
-      isFeatured: true,
-    ),
-    _BottomBarItem(label: 'Progress', icon: Icons.bar_chart_rounded),
+    _BottomBarItem(label: 'Attendance', icon: Icons.qr_code_scanner_rounded),
     _BottomBarItem(label: 'Profile', icon: Icons.person_rounded),
   ];
 
@@ -31,7 +25,6 @@ class MainNavigationScreen extends GetView<MainNavigationController> {
     FitnessHomeScreen(),
     WorkoutScreen(),
     AttendanceScreen(),
-    ProgressScreen(),
     ProfileScreen(),
   ];
 
@@ -116,16 +109,6 @@ class _DockItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (item.isFeatured) {
-      return _FeaturedDockItem(
-        item: item,
-        isSelected: isSelected,
-        duration: duration,
-        curve: curve,
-        onTap: onTap,
-      );
-    }
-
     final foregroundColor = isSelected ? AppColors.white : AppColors.textMuted;
     final backgroundColor = isSelected
         ? AppColors.primary
@@ -214,120 +197,8 @@ class _DockItem extends StatelessWidget {
 }
 
 class _BottomBarItem {
-  const _BottomBarItem({
-    required this.label,
-    required this.icon,
-    this.isFeatured = false,
-  });
+  const _BottomBarItem({required this.label, required this.icon});
 
   final String label;
   final IconData icon;
-  final bool isFeatured;
-}
-
-class _FeaturedDockItem extends StatelessWidget {
-  const _FeaturedDockItem({
-    required this.item,
-    required this.isSelected,
-    required this.duration,
-    required this.curve,
-    required this.onTap,
-  });
-
-  final _BottomBarItem item;
-  final bool isSelected;
-  final Duration duration;
-  final Curve curve;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final labelColor = isSelected ? AppColors.white : AppColors.textMuted;
-
-    return Semantics(
-      button: true,
-      selected: isSelected,
-      label: item.label,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: TweenAnimationBuilder<double>(
-          duration: isSelected ? const Duration(milliseconds: 360) : duration,
-          curve: isSelected ? Curves.easeOutBack : curve,
-          tween: Tween<double>(end: isSelected ? 1 : 0),
-          builder: (context, selectedProgress, child) {
-            return Transform.scale(
-              scale: 1 + (0.04 * selectedProgress),
-              child: child,
-            );
-          },
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(18),
-            child: SizedBox(
-              height: 58,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Positioned(
-                    top: -16,
-                    child: AnimatedContainer(
-                      duration: duration,
-                      curve: curve,
-                      height: isSelected ? 48 : 46,
-                      width: isSelected ? 48 : 46,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: AppColors.actionGradient,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.4),
-                            blurRadius: isSelected ? 18 : 14,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Icon(item.icon, color: AppColors.white, size: 24),
-                    ),
-                  ),
-                  Positioned(
-                    left: 4,
-                    right: 4,
-                    bottom: 8,
-                    height: 12,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: AnimatedDefaultTextStyle(
-                        duration: duration,
-                        curve: curve,
-                        style: TextHelper.navLabel.copyWith(color: labelColor),
-                        child: Text(item.label, maxLines: 1),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 3,
-                    child: AnimatedContainer(
-                      duration: duration,
-                      curve: curve,
-                      height: 3,
-                      width: isSelected ? 18 : 0,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

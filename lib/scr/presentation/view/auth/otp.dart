@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -107,6 +109,12 @@ class _OtpScreenState extends State<OtpScreen> {
                               otp: _controller.otpText.value,
                               isFocused: _controller.isFocused.value,
                               hasError: _controller.errorText.value != null,
+                              isLoading: _controller.isLoading.value,
+                              selectedDigitIndex:
+                                  _controller.selectedDigitIndex.value,
+                              onDigitTap: _controller.selectDigit,
+                              validationTrigger:
+                                  _controller.validationTrigger.value,
                             ),
                           ),
                           Obx(() {
@@ -213,10 +221,15 @@ class _OtpMark extends StatelessWidget {
 }
 
 class _OtpDigitField extends StatelessWidget {
-  const _OtpDigitField({required this.digit, required this.isActive});
+  const _OtpDigitField({
+    required this.digit,
+    required this.isActive,
+    required this.showCursor,
+  });
 
   final String digit;
   final bool isActive;
+  final bool showCursor;
 
   @override
   Widget build(BuildContext context) {
@@ -233,7 +246,23 @@ class _OtpDigitField extends StatelessWidget {
           width: isActive ? 1.6 : 1.4,
         ),
       ),
-      child: Text(digit, style: TextHelper.primary),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(digit, style: TextHelper.primary),
+          if (showCursor) ...[
+            if (digit.isNotEmpty) const SizedBox(width: 2),
+            Container(
+              width: 1.5,
+              height: 27,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -245,6 +274,10 @@ class _OtpInput extends StatelessWidget {
     required this.otp,
     required this.isFocused,
     required this.hasError,
+    required this.isLoading,
+    required this.selectedDigitIndex,
+    required this.onDigitTap,
+    required this.validationTrigger,
   });
 
   final TextEditingController controller;
@@ -252,53 +285,211 @@ class _OtpInput extends StatelessWidget {
   final String otp;
   final bool isFocused;
   final bool hasError;
+  final bool isLoading;
+  final int selectedDigitIndex;
+  final ValueChanged<int> onDigitTap;
+  final int validationTrigger;
 
   @override
   Widget build(BuildContext context) {
-    final activeIndex = otp.length.clamp(0, 3);
-
     return GestureDetector(
       onTap: focusNode.requestFocus,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(4, (index) {
-              final digit = index < otp.length ? otp[index] : '';
-              final isActive =
-                  hasError ||
-                  (isFocused &&
-                      (index == activeIndex ||
-                          (otp.length == 4 && index == 3)));
+      child: _Shake(
+        trigger: validationTrigger,
+        child: SizedBox(
+          height: 64,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const fieldWidth = 62.0;
+              const fieldCount = 4;
+              final gap =
+                  (constraints.maxWidth - (fieldWidth * fieldCount)) /
+                  (fieldCount - 1);
+              final center = (constraints.maxWidth - fieldWidth) / 2;
 
-              return _OtpDigitField(digit: digit, isActive: isActive);
-            }),
-          ),
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.01,
-              child: TextField(
-                key: const ValueKey('otp-input'),
-                controller: controller,
-                focusNode: focusNode,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(4),
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  ...List.generate(fieldCount, (index) {
+                    final digit =
+                        index < otp.length &&
+                            RegExp(r'[0-9]').hasMatch(otp[index])
+                        ? otp[index]
+                        : '';
+                    final isActive =
+                        hasError || (isFocused && index == selectedDigitIndex);
+                    final left = index * (fieldWidth + gap);
+
+                    return Positioned(
+                      left: left,
+                      width: fieldWidth,
+                      height: 64,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(end: isLoading ? 1 : 0),
+                        duration: const Duration(milliseconds: 560),
+                        curve: Curves.easeInOutCubic,
+                        child: IgnorePointer(
+                          ignoring: isLoading,
+                          child: GestureDetector(
+                            key: ValueKey('otp-digit-box-$index'),
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => onDigitTap(index),
+                            child: _OtpDigitField(
+                              digit: digit,
+                              isActive: isActive,
+                              showCursor:
+                                  isFocused &&
+                                  index == selectedDigitIndex &&
+                                  !isLoading,
+                            ),
+                          ),
+                        ),
+                        builder: (context, progress, child) =>
+                            Transform.translate(
+                              offset: Offset((center - left) * progress, 0),
+                              child: child,
+                            ),
+                      ),
+                    );
+                  }),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: Opacity(
+                        opacity: 0.01,
+                        child: TextField(
+                          key: const ValueKey('otp-input'),
+                          controller: controller,
+                          focusNode: focusNode,
+                          autofocus: true,
+                          keyboardType: TextInputType.number,
+                          maxLength: fieldCount,
+                          inputFormatters: const [_OtpSlotFormatter()],
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            counterText: '',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  counterText: '',
-                ),
-              ),
-            ),
+              );
+            },
           ),
-        ],
+        ),
       ),
     );
+  }
+}
+
+class _OtpSlotFormatter extends TextInputFormatter {
+  const _OtpSlotFormatter();
+
+  static const _emptySlot = ' ';
+  static const _fieldCount = 4;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final oldText = oldValue.text;
+
+    if (oldText.isNotEmpty && newValue.text.length == oldText.length - 1) {
+      final selectionStart = oldValue.selection.start;
+      final deletedIndex = oldValue.selection.isCollapsed
+          ? (oldValue.selection.extentOffset - 1).clamp(0, oldText.length - 1)
+          : selectionStart.clamp(0, oldText.length - 1);
+      final slots = oldText.split('')..[deletedIndex] = _emptySlot;
+
+      return TextEditingValue(
+        text: slots.join(),
+        selection: TextSelection.collapsed(offset: deletedIndex),
+      );
+    }
+
+    if (oldText.isNotEmpty &&
+        newValue.text.length == oldText.length + 1 &&
+        oldValue.selection.isCollapsed) {
+      final insertionIndex = oldValue.selection.extentOffset.clamp(
+        0,
+        oldText.length - 1,
+      );
+      final insertedCharacter = newValue.text[insertionIndex];
+      if (oldText[insertionIndex] == _emptySlot &&
+          RegExp(r'[0-9]').hasMatch(insertedCharacter)) {
+        final slots = oldText.split('')..[insertionIndex] = insertedCharacter;
+        return TextEditingValue(
+          text: slots.join(),
+          selection: TextSelection.collapsed(offset: insertionIndex + 1),
+        );
+      }
+    }
+
+    final sanitized = newValue.text
+        .split('')
+        .where(
+          (character) =>
+              character == _emptySlot || RegExp(r'[0-9]').hasMatch(character),
+        )
+        .take(_fieldCount)
+        .join();
+    final selectionOffset = newValue.selection.extentOffset.clamp(
+      0,
+      sanitized.length,
+    );
+
+    return TextEditingValue(
+      text: sanitized,
+      selection: TextSelection.collapsed(offset: selectionOffset),
+    );
+  }
+}
+
+class _Shake extends StatefulWidget {
+  const _Shake({required this.trigger, required this.child});
+
+  final int trigger;
+  final Widget child;
+
+  @override
+  State<_Shake> createState() => _ShakeState();
+}
+
+class _ShakeState extends State<_Shake> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 430),
+  );
+
+  @override
+  void didUpdateWidget(covariant _Shake oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.trigger != oldWidget.trigger) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final offset =
+            math.sin(_controller.value * math.pi * 5) *
+            7 *
+            (1 - _controller.value);
+        return Transform.translate(offset: Offset(offset, 0), child: child);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 }
 

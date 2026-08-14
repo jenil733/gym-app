@@ -46,7 +46,7 @@ void main() {
       expect(sent, isNotNull);
       expect(sent!.exerciseName, exercise.title);
       expect(sent.categoryName, exercise.category);
-      expect(sent.durationMinutes, 3);
+      expect(sent.durationMinutes, 2);
       expect(sent.endTime.isBefore(sent.startTime), isFalse);
       expect(controller.timingError.value, isNull);
     },
@@ -66,10 +66,55 @@ void main() {
       expect(controller.caloriesBurnedAt(356), closeTo(120, 0.01));
     },
   );
+
+  test('completed exercise is restored after logging in again', () async {
+    final original = WorkoutController().allExercises.first;
+    final repository = _FakeWorkoutTimingRepository(
+      history: GetWorkoutTimingModel(
+        success: true,
+        code: 200,
+        data: WorkoutTimingHistoryData(
+          todayDuration: 4,
+          history: [
+            WorkoutTimingHistoryItem(
+              day: 'Today',
+              exerciseName: original.title,
+              durationMinutes: 4,
+              notes: '${original.title} completed',
+            ),
+          ],
+        ),
+      ),
+    );
+    final controller = WorkoutController(
+      null,
+      null,
+      WorkoutTimingUseCase(repository),
+    );
+
+    await controller.restoreTodayWorkout(now: DateTime(2026, 7, 25));
+
+    expect(controller.selectedExercises.single.title, original.title);
+    expect(
+      controller.isExerciseCompleted(controller.selectedExercises.single),
+      isTrue,
+    );
+    expect(controller.todayWorkoutElapsedSeconds.value, 240);
+    expect(controller.addExercise(original), isFalse);
+  });
 }
 
 class _FakeWorkoutTimingRepository implements WorkoutTimingRepository {
+  _FakeWorkoutTimingRepository({
+    this.history = const GetWorkoutTimingModel(
+      success: true,
+      code: 200,
+      data: WorkoutTimingHistoryData(),
+    ),
+  });
+
   WorkoutTimingParams? savedParams;
+  final GetWorkoutTimingModel history;
 
   @override
   Future<WorkoutTimingModel> saveWorkoutTiming(
@@ -81,10 +126,6 @@ class _FakeWorkoutTimingRepository implements WorkoutTimingRepository {
 
   @override
   Future<GetWorkoutTimingModel> getWorkoutTimingHistory() async {
-    return const GetWorkoutTimingModel(
-      success: true,
-      code: 200,
-      data: WorkoutTimingHistoryData(),
-    );
+    return history;
   }
 }

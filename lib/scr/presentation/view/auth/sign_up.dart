@@ -167,15 +167,36 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             ),
                             const SizedBox(height: 16),
                             SignUpTextField(
-                              controller: _signUpController.placeController,
-                              label: 'Place',
+                              controller: _signUpController.addressController,
+                              label: 'Location',
                               icon: Icons.location_on_outlined,
-                              hintText: 'Place',
+                              hintText: 'City or address',
                               accent: AppColors.primary,
                               fillColor: AppColors.field,
                               borderColor: AppColors.border,
                               validator: (value) => _signUpController
-                                  .requiredField('Place', value),
+                                  .requiredField('Location', value),
+                            ),
+                            const SizedBox(height: 16),
+                            Obx(
+                              () => GenderDropdown(
+                                key: const ValueKey(
+                                  'signup-fitness-goal-dropdown',
+                                ),
+                                label: 'Fitness Goal',
+                                value:
+                                    _signUpController.selectedFitnessGoal.value,
+                                hintText: 'Select fitness goal',
+                                items: SignUpController.fitnessGoals,
+                                icon: Icons.track_changes_rounded,
+                                accent: AppColors.primary,
+                                fillColor: AppColors.field,
+                                borderColor: AppColors.border,
+                                validator: (value) => value == null
+                                    ? 'Fitness goal is required'
+                                    : null,
+                                onChanged: _signUpController.updateFitnessGoal,
+                              ),
                             ),
                             const SizedBox(height: 16),
                             SignUpTextField(

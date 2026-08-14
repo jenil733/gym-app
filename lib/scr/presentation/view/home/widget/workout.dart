@@ -15,7 +15,7 @@ Widget workoutCard(
   return Obx(() {
     final exercise = controller.nextExercise;
     final isEmpty = controller.selectedExercises.isEmpty;
-    final isComplete = controller.hasCompletedWorkout;
+    final isComplete = controller.hasCompletedWorkoutToday;
     final displayExercise =
         exercise ??
         (controller.selectedExercises.isNotEmpty
@@ -24,21 +24,19 @@ Widget workoutCard(
     final image = displayExercise?.image ?? banner;
     final imageAlignment =
         displayExercise?.imageAlignment ?? Alignment.centerRight;
-    final title = isEmpty
-        ? 'No exercises added'
-        : isComplete
+    final title = isComplete
         ? 'Workout Complete'
+        : isEmpty
+        ? 'No exercises added'
         : exercise!.title;
-    final subtitle = isEmpty
+    final subtitle = isComplete
+        ? controller.selectedExercises.isEmpty
+              ? "Today's workout has been completed"
+              : 'All ${controller.selectedExercises.length} exercises completed'
+        : isEmpty
         ? 'Build your workout from the exercise catalog'
-        : isComplete
-        ? 'All ${controller.selectedExercises.length} exercises completed'
         : '${exercise!.category} · ${exercise.focus}';
-    final buttonLabel = isEmpty
-        ? 'Browse Exercises'
-        : isComplete
-        ? 'View Workout'
-        : 'Start Workout';
+    final buttonLabel = isEmpty ? 'Browse Exercises' : 'Start Workout';
 
     return Container(
       key: const ValueKey('home-workout-image'),
@@ -91,20 +89,7 @@ Widget workoutCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          pill("Today's Workout"),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              'Total ${controller.formattedTodayWorkoutElapsed}',
-                              key: const ValueKey('home-today-workout-total'),
-                              overflow: TextOverflow.ellipsis,
-                              style: TextHelper.homeSubtitle,
-                            ),
-                          ),
-                        ],
-                      ),
+                      pill("Today's Workout"),
                       const Spacer(),
                       Text(
                         title,
@@ -120,14 +105,51 @@ Widget workoutCard(
                         style: TextHelper.homeSubtitle,
                       ),
                       const SizedBox(height: 12),
-                      CommonButton(
-                        label: buttonLabel,
-                        onPressed: isEmpty ? onBrowseExercises : onOpenWorkout,
-                        height: 42,
-                        borderRadius: 12,
-                        fontSize: 12,
-                        trailingIcon: Icons.chevron_right_rounded,
-                      ),
+                      if (isComplete)
+                        Container(
+                          key: const ValueKey('home-workout-completed-banner'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 9,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.55),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle_rounded,
+                                color: AppColors.primary,
+                                size: 17,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Completed Today',
+                                style: TextStyle(
+                                  color: AppColors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        CommonButton(
+                          label: buttonLabel,
+                          onPressed: isEmpty
+                              ? onBrowseExercises
+                              : onOpenWorkout,
+                          height: 42,
+                          borderRadius: 12,
+                          fontSize: 12,
+                          trailingIcon: Icons.chevron_right_rounded,
+                        ),
                     ],
                   ),
                 ),

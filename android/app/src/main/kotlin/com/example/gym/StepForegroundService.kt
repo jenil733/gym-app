@@ -26,12 +26,86 @@ class StepForegroundService : Service(), SensorEventListener {
             "com.example.gym.action.RESTORE_STEP_NOTIFICATION"
         const val NOTIFICATION_ID = 4101
         private const val CHANNEL_ID = "daily_steps_live_v2"
-        private const val PREFS_NAME = "FlutterSharedPreferences"
-        private const val DATE_KEY = "flutter.step_tracking_date"
-        private const val TODAY_KEY = "flutter.step_tracking_today"
-        private const val LAST_RAW_KEY = "flutter.step_tracking_last_raw"
-        private const val YESTERDAY_DATE_KEY = "flutter.step_tracking_yesterday_date"
-        private const val YESTERDAY_STEPS_KEY = "flutter.step_tracking_yesterday_steps"
+        internal const val PREFS_NAME = "GymStepServiceState"
+        internal const val DATE_KEY = "step_tracking_date"
+        internal const val TODAY_KEY = "step_tracking_today"
+        internal const val LAST_RAW_KEY = "step_tracking_last_raw"
+        internal const val YESTERDAY_DATE_KEY = "step_tracking_yesterday_date"
+        internal const val YESTERDAY_STEPS_KEY = "step_tracking_yesterday_steps"
+
+        fun snapshot(context: Context): Map<String, Any?> {
+            val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            rollOverStoredDay(preferences)
+            return mapOf(
+                "date" to preferences.getString(DATE_KEY, null),
+                "todaySteps" to readLong(preferences, TODAY_KEY),
+                "lastRawSteps" to if (preferences.contains(LAST_RAW_KEY)) {
+                    readLong(preferences, LAST_RAW_KEY)
+                } else {
+                    null
+                },
+                "yesterdayDate" to preferences.getString(YESTERDAY_DATE_KEY, null),
+                "yesterdaySteps" to readLong(preferences, YESTERDAY_STEPS_KEY),
+            )
+        }
+
+        fun reconcileTodaySteps(context: Context, savedSteps: Long): Long {
+            val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            rollOverStoredDay(preferences)
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            val storedDate = preferences.getString(DATE_KEY, null)
+            val current = if (storedDate == today) readLong(preferences, TODAY_KEY) else 0L
+            val realSteps = maxOf(current, savedSteps.coerceAtLeast(0L))
+            preferences.edit()
+                .putString(DATE_KEY, today)
+                .putLong(TODAY_KEY, realSteps)
+                .apply()
+            return realSteps
+        }
+
+        fun resetTodaySteps(context: Context) {
+            val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            preferences.edit()
+                .putString(DATE_KEY, today)
+                .putLong(TODAY_KEY, 0L)
+                .apply()
+        }
+
+        private fun readLong(
+            preferences: android.content.SharedPreferences,
+            key: String,
+        ): Long {
+            return try {
+                preferences.getLong(key, 0L)
+            } catch (_: ClassCastException) {
+                preferences.getInt(key, 0).toLong()
+            }
+        }
+
+        private fun rollOverStoredDay(
+            preferences: android.content.SharedPreferences,
+        ) {
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            val storedDate = preferences.getString(DATE_KEY, null)
+            if (storedDate == today) return
+
+            val calendar = Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_YEAR, -1)
+            }
+            val yesterday = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                .format(calendar.time)
+            val editor = preferences.edit()
+            if (storedDate == yesterday) {
+                editor
+                    .putString(YESTERDAY_DATE_KEY, yesterday)
+                    .putLong(YESTERDAY_STEPS_KEY, readLong(preferences, TODAY_KEY))
+            }
+            editor
+                .putString(DATE_KEY, today)
+                .putLong(TODAY_KEY, 0L)
+                .apply()
+        }
     }
 
     private lateinit var sensorManager: SensorManager
@@ -41,6 +115,7 @@ class StepForegroundService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
+        Companion.rollOverStoredDay(preferences)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(savedTodaySteps()))
 
@@ -79,7 +154,11 @@ class StepForegroundService : Service(), SensorEventListener {
                 editor.putString(YESTERDAY_DATE_KEY, yesterday)
                 editor.putLong(YESTERDAY_STEPS_KEY, todaySteps)
             }
-            todaySteps = 0L
+            todaySteps = if (lastRaw >= 0 && rawSteps >= lastRaw) {
+                rawSteps - lastRaw
+            } else {
+                0L
+            }
             lastRaw = rawSteps
             editor
                 .putString(DATE_KEY, today)
@@ -91,7 +170,7 @@ class StepForegroundService : Service(), SensorEventListener {
         }
 
         if (lastRaw < 0) {
-            todaySteps = if (todaySteps == 0L) rawSteps else todaySteps
+            lastRaw = rawSteps
         } else {
             val delta = if (rawSteps >= lastRaw) rawSteps - lastRaw else rawSteps
             if (delta > 0) todaySteps += delta
@@ -158,18 +237,6 @@ class StepForegroundService : Service(), SensorEventListener {
             deleteIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val restoreIntent = Intent(
-            this,
-            StepNotificationActionReceiver::class.java,
-        ).apply {
-            action = ACTION_RESTORE_NOTIFICATION
-        }
-        val restorePendingIntent = PendingIntent.getBroadcast(
-            this,
-            2,
-            restoreIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -180,17 +247,10 @@ class StepForegroundService : Service(), SensorEventListener {
             .setContentTitle("Gym footsteps")
             .setContentText(message)
             .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setDeleteIntent(restorePendingIntent)
+            .setOngoing(false)
+            .setDeleteIntent(deletePendingIntent)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .addAction(
-                Notification.Action.Builder(
-                    R.drawable.ic_stat_delete,
-                    "Delete",
-                    deletePendingIntent,
-                ).build(),
-            )
             .build()
     }
 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:gym/scr/core/constants/app_colors.dart';
 import 'package:gym/scr/core/utils/helper/text_helper.dart';
+import 'package:gym/scr/presentation/controller/attendance_controller.dart';
 import 'package:gym/scr/presentation/controller/workout_controller.dart';
 import 'package:gym/scr/presentation/widgets/common/common_button.dart';
 import 'package:gym/scr/presentation/widgets/common/common_app_bar.dart';
@@ -354,16 +355,17 @@ class _CaloriesBurnCard extends StatelessWidget {
 }
 
 class CurrentStreakCard extends StatelessWidget {
-  const CurrentStreakCard({super.key, required this.streakDays});
+  const CurrentStreakCard({
+    super.key,
+    required this.streakDays,
+    required this.days,
+  });
 
   final int streakDays;
-
-  static const _weekdayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  final List<AttendanceStreakDay> days;
 
   @override
   Widget build(BuildContext context) {
-    final currentWeekdayIndex = DateTime.now().weekday - 1;
-
     return Container(
       key: const ValueKey('current-streak-card'),
       height: 170,
@@ -400,7 +402,7 @@ class CurrentStreakCard extends StatelessWidget {
                 stops: [0, 0.28],
               ).createShader(bounds),
               child: Image.asset(
-                'assets/images/streak_fire.png',
+                'assets/images/streak_fire.webp',
                 fit: BoxFit.cover,
                 alignment: Alignment.centerLeft,
                 errorBuilder: (_, _, _) => const SizedBox.shrink(),
@@ -472,7 +474,9 @@ class CurrentStreakCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  "You're on fire! Keep it up.",
+                  streakDays == 0
+                      ? 'Mark attendance today to start a streak.'
+                      : "You're on fire! Keep it up.",
                   style: TextHelper.homeSubtitle.copyWith(
                     color: AppColors.textMuted,
                     fontSize: 10,
@@ -483,13 +487,15 @@ class CurrentStreakCard extends StatelessWidget {
                   width: 216,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: List.generate(_weekdayLabels.length, (index) {
-                      final isToday = index == currentWeekdayIndex;
-                      return _StreakDay(
-                        label: _weekdayLabels[index],
-                        isToday: isToday,
-                      );
-                    }),
+                    children: days
+                        .map((day) {
+                          return _StreakDay(
+                            label: day.label,
+                            state: day.state,
+                            date: day.date,
+                          );
+                        })
+                        .toList(growable: false),
                   ),
                 ),
               ],
@@ -502,47 +508,70 @@ class CurrentStreakCard extends StatelessWidget {
 }
 
 class _StreakDay extends StatelessWidget {
-  const _StreakDay({required this.label, required this.isToday});
+  const _StreakDay({
+    required this.label,
+    required this.state,
+    required this.date,
+  });
 
   final String label;
-  final bool isToday;
+  final AttendanceDayState state;
+  final DateTime date;
 
   @override
   Widget build(BuildContext context) {
+    final isActive = state == AttendanceDayState.active;
+    final isCompleted = state == AttendanceDayState.completed;
+    final isAbsent = state == AttendanceDayState.absent;
+    final color = isCompleted
+        ? AppColors.primary
+        : isAbsent
+        ? AppColors.warning
+        : const Color(0xFF09090D);
+    final icon = switch (state) {
+      AttendanceDayState.completed => Icons.check_rounded,
+      AttendanceDayState.absent => Icons.close_rounded,
+      AttendanceDayState.active => Icons.local_fire_department_rounded,
+      AttendanceDayState.upcoming => null,
+    };
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
+          key: ValueKey(
+            'streak-day-${date.year}-${date.month}-${date.day}-${state.name}',
+          ),
           height: 20,
           width: 20,
           decoration: BoxDecoration(
-            color: isToday ? const Color(0xFF09090D) : AppColors.primary,
+            color: color,
             shape: BoxShape.circle,
-            border: isToday
+            border: isActive
                 ? Border.all(color: AppColors.primary, width: 1.5)
+                : state == AttendanceDayState.upcoming
+                ? Border.all(color: AppColors.border)
                 : null,
             boxShadow: [
               BoxShadow(
                 color: AppColors.primary.withValues(
-                  alpha: isToday ? 0.45 : 0.18,
+                  alpha: isActive ? 0.45 : 0.18,
                 ),
-                blurRadius: isToday ? 8 : 4,
+                blurRadius: isActive ? 8 : 4,
               ),
             ],
           ),
-          child: Icon(
-            isToday ? Icons.local_fire_department_rounded : Icons.check_rounded,
-            color: AppColors.textOnDark,
-            size: 13,
-          ),
+          child: icon == null
+              ? null
+              : Icon(icon, color: AppColors.textOnDark, size: 13),
         ),
         const SizedBox(height: 4),
         Text(
           label,
           style: TextHelper.homeSubtitle.copyWith(
-            color: isToday ? AppColors.primary : AppColors.textMuted,
+            color: isActive ? AppColors.primary : AppColors.textMuted,
             fontSize: 9,
-            fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
       ],

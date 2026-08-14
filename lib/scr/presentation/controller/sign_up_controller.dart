@@ -3,24 +3,32 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:gym/scr/core/utils/navigation/app_routes.dart';
 import 'package:gym/scr/core/utils/helper/toast_helper.dart';
+import 'package:gym/scr/core/constants/fitness_goals.dart';
+import 'package:gym/scr/core/services/local_storage.dart';
+import 'package:gym/scr/core/services/pending_registration_profile.dart';
 import 'package:gym/scr/domain/repository/signup_repository.dart';
 import 'package:gym/scr/domain/repository/otp_repository.dart';
 import 'package:gym/scr/domain/usecase/signup_usecase.dart';
+import 'package:gym/scr/domain/usecase/update_profile_usecase.dart';
 import 'package:gym/scr/domain/usecase/verify_otp_usecase.dart';
 import 'package:gym/scr/presentation/controller/login_controller.dart';
 
 class SignUpController extends GetxController {
-  SignUpController([this._signupUseCase]);
+  SignUpController([this._signupUseCase, this._pendingRegistrationProfile]);
 
   final SignupUseCase? _signupUseCase;
+  final PendingRegistrationProfile? _pendingRegistrationProfile;
 
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
-  final TextEditingController placeController = TextEditingController();
+  final TextEditingController addressController = TextEditingController();
   final TextEditingController dobController = TextEditingController();
   final RxnString selectedGender = RxnString();
+  final RxnString selectedFitnessGoal = RxnString();
   final RxBool isLoading = false.obs;
+
+  static const List<String> fitnessGoals = FitnessGoals.values;
 
   SignupUseCase get _useCase => _signupUseCase ?? Get.find<SignupUseCase>();
 
@@ -28,9 +36,23 @@ class SignUpController extends GetxController {
       ? Get.find<VerifyOtpUseCase>()
       : null;
 
+  PendingRegistrationProfile get _pendingProfile =>
+      _pendingRegistrationProfile ??
+      (Get.isRegistered<PendingRegistrationProfile>()
+          ? Get.find<PendingRegistrationProfile>()
+          : PendingRegistrationProfile(LocalStorageService()));
+
+  UpdateProfileUseCase? get _profileUpdater =>
+      Get.isRegistered<UpdateProfileUseCase>()
+      ? Get.find<UpdateProfileUseCase>()
+      : null;
+
   void updateGender(String? value) {
-    print("Selected Gender: $value");
     selectedGender.value = value;
+  }
+
+  void updateFitnessGoal(String? value) {
+    selectedFitnessGoal.value = value;
   }
 
   void updateDob(DateTime date) {
@@ -40,48 +62,30 @@ class SignUpController extends GetxController {
   }
 
   void openSignIn() {
-    print("Navigating to Login");
     Get.toNamed(AppRoutes.login);
   }
 
   Future<void> handleGetStarted() async {
-    print("Signup button clicked");
-
     FocusManager.instance.primaryFocus?.unfocus();
     final isValid = formKey.currentState?.validate() ?? false;
 
-    print("Form validation: $isValid");
-
     if (!isValid || isLoading.value) {
-      print("Form invalid or already loading");
       return;
     }
 
     isLoading.value = true;
 
     try {
-      print("Sending signup request...");
-      print("Name: ${nameController.text.trim()}");
-      print("Phone: ${phoneController.text.trim()}");
-      print("Gender: ${selectedGender.value}");
-      print("Place: ${placeController.text.trim()}");
-      print("DOB: ${dobController.text.trim()}");
-
       final response = await _useCase(
         SignupParams(
           name: nameController.text.trim(),
           phone: phoneController.text.trim(),
           gender: selectedGender.value!,
-          place: placeController.text.trim(),
+          address: addressController.text.trim(),
           dob: dobController.text.trim(),
+          fitnessGoal: selectedFitnessGoal.value!,
         ),
       );
-
-      print("API Response received");
-      print("Success: ${response.success}");
-      print("Code: ${response.code}");
-      print("Message: ${response.message}");
-      print("Data: ${response.data}");
 
       final isSuccessful =
           response.success == true ||
@@ -89,13 +93,19 @@ class SignUpController extends GetxController {
           response.code == 201;
 
       if (!isSuccessful) {
-        print("Signup failed from API");
         ToastHelper.error(
           'Sign up failed',
           response.message ?? 'Please try again.',
         );
         return;
       }
+
+      final registeredPhone = phoneController.text.trim();
+      await _pendingProfile.save(
+        phone: registeredPhone,
+        address: addressController.text.trim(),
+        fitnessGoal: selectedFitnessGoal.value!,
+      );
 
       final registrationOtp = response.data?.otp?.toString();
       final otpUseCase = _otpUseCase;
@@ -120,11 +130,17 @@ class SignUpController extends GetxController {
           );
           return;
         }
+        final verificationToken = verificationResponse.data?.token;
+        final profileUpdater = _profileUpdater;
+        if (verificationToken != null && profileUpdater != null) {
+          await _pendingProfile.sync(
+            phone: registeredPhone,
+            updateProfile: profileUpdater,
+            temporaryAuthToken: verificationToken,
+          );
+        }
       }
 
-      print("Signup verified -> Going to Login screen");
-
-      final registeredPhone = phoneController.text.trim();
       final successMessage =
           response.message ?? 'Registration completed successfully.';
       if (Get.isRegistered<LoginController>()) {
@@ -144,32 +160,23 @@ class SignUpController extends GetxController {
         );
       }
     } on DioException catch (error) {
-      print("Dio Error occurred");
-      print("Error Message: ${error.message}");
-      print("Status Code: ${error.response?.statusCode}");
-      print("Response Data: ${error.response?.data}");
-
       final responseData = error.response?.data;
       final message = responseData is Map && responseData['message'] != null
           ? responseData['message'].toString()
           : 'Unable to sign up. Please check your connection.';
 
       ToastHelper.error('Sign up failed', message);
-    } catch (e) {
-      print("Unexpected Error: $e");
+    } catch (_) {
       ToastHelper.error(
         'Sign up failed',
         'Something went wrong. Please try again.',
       );
     } finally {
-      print("Loading finished");
       isLoading.value = false;
     }
   }
 
   String? requiredField(String label, String? value) {
-    print("Validating field: $label = $value");
-
     if (value == null || value.trim().isEmpty) {
       return '$label is required';
     }
@@ -177,8 +184,6 @@ class SignUpController extends GetxController {
   }
 
   String? validatePhone(String? value) {
-    print("Validating phone: $value");
-
     final digits = value?.replaceAll(RegExp(r'\D'), '') ?? '';
 
     if (digits.isEmpty) {
@@ -221,11 +226,9 @@ class SignUpController extends GetxController {
 
   @override
   void onClose() {
-    print("Disposing controllers");
-
     nameController.dispose();
     phoneController.dispose();
-    placeController.dispose();
+    addressController.dispose();
     dobController.dispose();
     super.onClose();
   }

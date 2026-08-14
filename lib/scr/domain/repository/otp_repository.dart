@@ -5,14 +5,24 @@ class OtpParams {
     required this.phoneNumber,
     required this.otp,
     required this.type,
+    this.fcmToken,
+    this.deviceId,
   });
 
   final String phoneNumber;
   final String otp;
   final String type;
+  final String? fcmToken;
+  final String? deviceId;
 
   Map<String, dynamic> toJson() {
-    return {'phone_number': phoneNumber, 'otp': otp, 'type': type};
+    return {
+      'phone_number': phoneNumber,
+      'otp': otp,
+      'type': type,
+      if (fcmToken?.trim().isNotEmpty == true) 'fcm_token': fcmToken!.trim(),
+      if (deviceId?.trim().isNotEmpty == true) 'device_id': deviceId!.trim(),
+    };
   }
 }
 

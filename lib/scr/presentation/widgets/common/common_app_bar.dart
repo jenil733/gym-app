@@ -9,11 +9,13 @@ class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.title,
     this.showBackButton = true,
     this.centerTitle = false,
+    this.actions = const [],
   });
 
   final String title;
   final bool showBackButton;
   final bool centerTitle;
+  final List<Widget> actions;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -37,6 +39,7 @@ class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
             )
           : null,
       title: Text(title, style: TextHelper.appBarTitle),
+      actions: actions,
     );
   }
 }

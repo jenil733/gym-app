@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:gym/scr/core/constants/app_colors.dart';
 import 'package:gym/scr/core/utils/helper/text_helper.dart';
+import 'package:gym/scr/presentation/controller/attendance_controller.dart';
 import 'package:gym/scr/presentation/controller/profile_controller.dart';
 import 'package:gym/scr/presentation/view/profile/widgets/profile_header.dart';
 import 'package:gym/scr/presentation/view/profile/widgets/profile_list.dart';
@@ -21,6 +22,7 @@ class ProfileScreen extends GetView<ProfileController> {
   @override
   Widget build(BuildContext context) {
     final controller = this.controller;
+    AttendanceController.resolve();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -44,26 +46,6 @@ class ProfileScreen extends GetView<ProfileController> {
                   const SizedBox(height: 18),
                   ProfileHeader(controller: profileController),
                   const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      for (
-                        var index = 0;
-                        index < profileController.quickActions.length;
-                        index += 1
-                      ) ...[
-                        if (index > 0) const SizedBox(width: 10),
-                        Expanded(
-                          child: _QuickAction(
-                            action: profileController.quickActions[index],
-                            onTap: () => profileController.openRoute(
-                              profileController.quickActions[index].route,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 22),
                   Text('Physical Detail', style: TextHelper.homeTitle2),
                   const SizedBox(height: 12),
                   Row(
@@ -209,46 +191,6 @@ class ProfileStat extends StatelessWidget {
             Text(label, style: TextHelper.homeSubtitle),
             Text(value, style: TextHelper.homeTitle4),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickAction extends StatelessWidget {
-  const _QuickAction({required this.action, required this.onTap});
-
-  final ProfileQuickAction action;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          height: 82,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(action.icon, color: AppColors.primary, size: 24),
-              const SizedBox(height: 7),
-              Text(
-                action.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextHelper.poppins2,
-              ),
-            ],
-          ),
         ),
       ),
     );

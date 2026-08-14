@@ -5,23 +5,26 @@ class SignupParams {
     required this.name,
     required this.phone,
     required this.gender,
-    required this.place,
+    required this.address,
     required this.dob,
+    required this.fitnessGoal,
   });
 
   final String name;
   final String phone;
   final String gender;
-  final String place;
+  final String address;
   final String dob;
+  final String fitnessGoal;
 
   Map<String, dynamic> toJson() {
     return {
       'name': name,
       'phone_number': phone,
       'gender': gender,
-      'place': place,
+      'address': address,
       'dob': dob,
+      'fitness_goal': fitnessGoal,
     };
   }
 }

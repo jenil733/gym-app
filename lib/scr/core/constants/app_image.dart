@@ -1,4 +1,4 @@
-const String appLogo = 'assets/images/logo.png';
+const String appLogo = 'assets/images/logo.webp';
 const String onboardingImageOne =
     'assets/images/studio-image-full-body-sporty-blond-brunette-women-athletic-man-posing-white-box-grey-background (1).jpg';
 const String onboardingImageTwo =

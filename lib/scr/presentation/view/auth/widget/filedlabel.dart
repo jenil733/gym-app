@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gym/scr/core/utils/helper/text_helper.dart';
 
 class FieldLabel extends StatelessWidget {
-  const FieldLabel(this.label);
+  const FieldLabel(this.label, {super.key});
 
   final String label;
 
