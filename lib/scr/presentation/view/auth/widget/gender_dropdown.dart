@@ -4,6 +4,7 @@ import 'package:gym/scr/presentation/view/auth/widget/filedlabel.dart';
 
 class GenderDropdown extends StatelessWidget {
   const GenderDropdown({
+    super.key,
     required this.label,
     required this.value,
     required this.icon,
@@ -12,6 +13,8 @@ class GenderDropdown extends StatelessWidget {
     required this.borderColor,
     required this.validator,
     required this.onChanged,
+    this.hintText = 'Gender',
+    this.items = const ['Male', 'Female'],
   });
 
   final String label;
@@ -22,6 +25,8 @@ class GenderDropdown extends StatelessWidget {
   final Color borderColor;
   final String? Function(String?) validator;
   final ValueChanged<String?> onChanged;
+  final String hintText;
+  final List<String> items;
 
   TextStyle get _textStyle {
     return TextHelper.fieldText;
@@ -65,7 +70,7 @@ class GenderDropdown extends StatelessWidget {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           value: value,
-                          hint: Text('Gender', style: _hintStyle),
+                          hint: Text(hintText, style: _hintStyle),
                           isExpanded: true,
                           dropdownColor: fillColor,
                           borderRadius: BorderRadius.circular(18),
@@ -74,7 +79,7 @@ class GenderDropdown extends StatelessWidget {
                             color: accent,
                           ),
                           style: _textStyle,
-                          items: ['Male', 'Female']
+                          items: items
                               .map(
                                 (gender) => DropdownMenuItem(
                                   value: gender,
